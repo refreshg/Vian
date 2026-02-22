@@ -1,6 +1,13 @@
 "use client";
 
-import { PieChart, Pie, Cell, Tooltip, Legend, ResponsiveContainer } from "recharts";
+import {
+  PieChart,
+  Pie,
+  Cell,
+  Tooltip,
+  Legend,
+  ResponsiveContainer,
+} from "recharts";
 import type { StageGroup } from "@/lib/dashboardData";
 import { isRejectionStage } from "@/lib/dashboardData";
 
@@ -12,6 +19,31 @@ const COLORS = [
   "#fdba74", // orange
   "#c4b5fd", // lavender
 ];
+
+const RADIAN = Math.PI / 180;
+
+/** Custom outside label: "value (percentage%)" with offset to reduce overlap */
+function renderOutsideLabel(props: any) {
+  const { cx, cy, midAngle, innerRadius, outerRadius, payload } = props;
+  const value = payload?.value ?? props?.value ?? 0;
+  const percentage = payload?.percentage ?? (props?.percent != null ? (props.percent * 100).toFixed(2) : "0");
+  const labelRadius = (outerRadius ?? 90) + 18;
+  const x = cx + labelRadius * Math.cos(-midAngle * RADIAN);
+  const y = cy + labelRadius * Math.sin(-midAngle * RADIAN);
+  const textAnchor = x >= cx ? "start" : "end";
+
+  return (
+    <text
+      x={x}
+      y={y}
+      textAnchor={textAnchor}
+      dominantBaseline="central"
+      className="fill-gray-700 text-xs font-medium"
+    >
+      {`${value} (${percentage}%)`}
+    </text>
+  );
+}
 
 interface RequestsByStageDonutProps {
   stageGroups: StageGroup[];
@@ -31,21 +63,19 @@ export function RequestsByStageDonut({ stageGroups }: RequestsByStageDonutProps)
         Requests by Stage
       </h2>
       <div className="flex items-center justify-center gap-4 pt-4">
-        <ResponsiveContainer width="100%" height={280}>
-          <PieChart>
+        <ResponsiveContainer width="100%" height={300}>
+          <PieChart margin={{ top: 8, right: 120, bottom: 8, left: 8 }}>
             <Pie
               data={data}
               dataKey="value"
               nameKey="name"
-              cx="40%"
+              cx="38%"
               cy="50%"
-              innerRadius={60}
-              outerRadius={90}
-              paddingAngle={1}
-              label={({ name, value, percentage }) =>
-                `${value} (${percentage}%)`
-              }
-              labelLine
+              innerRadius={58}
+              outerRadius={88}
+              paddingAngle={2}
+              label={renderOutsideLabel}
+              labelLine={{ stroke: "#94a3b8", strokeWidth: 1 }}
             >
               {data.map((entry, index) => (
                 <Cell

@@ -5,7 +5,9 @@ import { DateRangePicker } from "@/components/DateRangePicker";
 import { KPIStatsRow } from "@/components/KPIStatsRow";
 import { RequestsByStageDonut } from "@/components/RequestsByStageDonut";
 import { RequestsByDepartmentsBar } from "@/components/RequestsByDepartmentsBar";
+import { RequestsBySourceChart } from "@/components/RequestsBySourceChart";
 import { RejectionReasonsTable } from "@/components/RejectionReasonsTable";
+import { CommentListTable } from "@/components/CommentListTable";
 import { RequestRateByCountryPlaceholder } from "@/components/RequestRateByCountryPlaceholder";
 import { computeDashboardData } from "@/lib/dashboardData";
 import type { BitrixDeal } from "@/types/bitrix";
@@ -23,6 +25,18 @@ export default function DashboardPage() {
   const [endDate, setEndDate] = useState(() => formatDate(new Date()));
   const [deals, setDeals] = useState<BitrixDeal[]>([]);
   const [stageNameMap, setStageNameMap] = useState<Record<string, string>>({});
+  const [departmentIdToName, setDepartmentIdToName] = useState<
+    Record<string, string>
+  >({});
+  const [rejectionReasonIdToName, setRejectionReasonIdToName] = useState<
+    Record<string, string>
+  >({});
+  const [commentListIdToName, setCommentListIdToName] = useState<
+    Record<string, string>
+  >({});
+  const [sourceIdToName, setSourceIdToName] = useState<
+    Record<string, string>
+  >({});
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -36,10 +50,18 @@ export default function DashboardPage() {
       if (!res.ok) throw new Error(data.error || "Failed to fetch");
       setDeals(data.result ?? []);
       setStageNameMap(data.stageNameMap ?? {});
+      setDepartmentIdToName(data.departmentIdToName ?? {});
+      setRejectionReasonIdToName(data.rejectionReasonIdToName ?? {});
+      setCommentListIdToName(data.commentListIdToName ?? {});
+      setSourceIdToName(data.sourceIdToName ?? {});
     } catch (e) {
       setError(e instanceof Error ? e.message : "Something went wrong");
       setDeals([]);
       setStageNameMap({});
+      setDepartmentIdToName({});
+      setRejectionReasonIdToName({});
+      setCommentListIdToName({});
+      setSourceIdToName({});
     } finally {
       setLoading(false);
     }
@@ -50,7 +72,14 @@ export default function DashboardPage() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
-  const dashboard = computeDashboardData(deals, stageNameMap);
+  const dashboard = computeDashboardData(
+    deals,
+    stageNameMap,
+    departmentIdToName,
+    rejectionReasonIdToName,
+    commentListIdToName,
+    sourceIdToName
+  );
 
   return (
     <div className="min-h-screen bg-gray-100">
@@ -93,6 +122,7 @@ export default function DashboardPage() {
             <div className="flex flex-col gap-6">
               <RequestsByStageDonut stageGroups={dashboard.stageGroups} />
               <RejectionReasonsTable rows={dashboard.rejectionReasons} />
+              <CommentListTable rows={dashboard.commentListRows} />
             </div>
             {/* Right column */}
             <div className="flex flex-col gap-6">
@@ -100,6 +130,7 @@ export default function DashboardPage() {
               <RequestsByDepartmentsBar
                 departmentGroups={dashboard.departmentGroups}
               />
+              <RequestsBySourceChart sourceGroups={dashboard.sourceGroups} />
               <RequestRateByCountryPlaceholder />
             </div>
           </div>

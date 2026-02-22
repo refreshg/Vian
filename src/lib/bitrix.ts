@@ -69,6 +69,102 @@ export async function fetchStageNameMap(): Promise<Record<string, string>> {
 }
 
 /**
+ * Fetches source statuses (ENTITY_ID: SOURCE) and returns STATUS_ID -> NAME.
+ */
+export async function fetchSourceNameMap(): Promise<Record<string, string>> {
+  const baseUrl = getWebhookUrl();
+  const endpoint = `${baseUrl}/crm.status.list`;
+
+  const body = {
+    FILTER: { ENTITY_ID: "SOURCE" },
+  };
+
+  const response = await fetch(endpoint, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(body),
+  });
+
+  const data = await response.json();
+
+  if (!response.ok) {
+    throw new Error(
+      data.error_description || data.error || `HTTP ${response.status}`
+    );
+  }
+
+  if (data.error) {
+    throw new Error(data.error_description || data.error);
+  }
+
+  const list = (data.result ?? []) as BitrixStatusItem[];
+  const map: Record<string, string> = {};
+  for (const item of list) {
+    if (item.STATUS_ID && item.NAME) {
+      map[item.STATUS_ID] = item.NAME;
+    }
+  }
+  return map;
+}
+
+/** Option item for dropdown/list fields in crm.deal.fields (items or list array). */
+interface BitrixFieldOption {
+  ID: string | number;
+  VALUE: string;
+  [key: string]: unknown;
+}
+
+/** Field descriptor in crm.deal.fields result (may contain items/list/LIST for enumerations). */
+interface BitrixFieldDescriptor {
+  items?: BitrixFieldOption[];
+  list?: BitrixFieldOption[];
+  LIST?: BitrixFieldOption[];
+  [key: string]: unknown;
+}
+
+/**
+ * Fetches deal field metadata and returns option ID -> VALUE for a dropdown field.
+ * Call crm.deal.fields and read the field's items (or list) array.
+ */
+export async function fetchDealFieldOptions(
+  fieldId: string
+): Promise<Record<string, string>> {
+  const baseUrl = getWebhookUrl();
+  const endpoint = `${baseUrl}/crm.deal.fields`;
+
+  const response = await fetch(endpoint, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({}),
+  });
+
+  const data = await response.json();
+
+  if (!response.ok) {
+    throw new Error(
+      data.error_description || data.error || `HTTP ${response.status}`
+    );
+  }
+
+  if (data.error) {
+    throw new Error(data.error_description || data.error);
+  }
+
+  const fields = (data.result ?? {}) as Record<string, BitrixFieldDescriptor>;
+  const field = fields[fieldId];
+  const items: BitrixFieldOption[] =
+    field?.items ?? field?.list ?? field?.LIST ?? ([] as BitrixFieldOption[]);
+
+  const map: Record<string, string> = {};
+  for (const item of items) {
+    const id = item.ID != null ? String(item.ID) : "";
+    const value = item.VALUE ?? "";
+    if (id) map[id] = value;
+  }
+  return map;
+}
+
+/**
  * Fetches deals from Bitrix24 using crm.deal.list with optional date filter.
  * Uses DATE_CREATE filter with >= and <= for the given range.
  */
@@ -93,8 +189,10 @@ export async function fetchDealList(params: {
       "OPPORTUNITY",
       "STAGE_ID",
       "DATE_CREATE",
-      "UF_CRM_DEPARTMENT",
-      "UF_CRM_REJECTION_REASON",
+      "SOURCE_ID",
+      "UF_CRM_1758023694929",
+      "UF_CRM_1753862633986",
+      "UF_CRM_1768995573895",
     ],
     FILTER: filter,
     ORDER: { DATE_CREATE: "DESC" },
@@ -150,8 +248,10 @@ export async function fetchAllDealsInRange(params: {
       "OPPORTUNITY",
       "STAGE_ID",
       "DATE_CREATE",
-      "UF_CRM_DEPARTMENT",
-      "UF_CRM_REJECTION_REASON",
+      "SOURCE_ID",
+      "UF_CRM_1758023694929",
+      "UF_CRM_1753862633986",
+      "UF_CRM_1768995573895",
     ],
     FILTER: filter,
     ORDER: { DATE_CREATE: "DESC" },

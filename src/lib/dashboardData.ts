@@ -14,39 +14,19 @@ export function stageLabel(stageId: string): string {
   return last.replace(/_/g, " ");
 }
 
-/** Mock department when UF_CRM_DEPARTMENT is missing - derive from deal ID for consistency */
-const MOCK_DEPARTMENTS = [
-  "Gynecologic Oncology",
-  "Cardiology",
-  "General Medicine",
-  "Pediatrics",
-  "Surgery",
-  "Neurology",
-  "Other",
-];
-
-function getDepartment(deal: BitrixDeal): string {
-  const custom = deal.UF_CRM_DEPARTMENT?.trim();
-  if (custom) return custom;
-  const index = parseInt(deal.ID, 10) % MOCK_DEPARTMENTS.length;
-  return MOCK_DEPARTMENTS[Number.isNaN(index) ? 0 : index];
-}
-
-/** Mock rejection reasons when UF_CRM_REJECTION_REASON is missing */
-const MOCK_REJECTION_REASONS = [
-  "Didn't receive enough follow-up/support",
-  "Does not need medical assistance",
-  "Is not interested",
-  "Service is not available at this hospital",
-  "Got in touch and received the information, but stopped communicating after the feedback.",
-  "Others",
-];
-
-function getRejectionReason(deal: BitrixDeal): string {
-  const custom = deal.UF_CRM_REJECTION_REASON?.trim();
-  if (custom) return custom;
-  const index = parseInt(deal.ID, 10) % MOCK_REJECTION_REASONS.length;
-  return MOCK_REJECTION_REASONS[Number.isNaN(index) ? 0 : index];
+/**
+ * Resolve department display name from deal using field options map.
+ * Raw value is option ID (numeric/string); map to human-readable name or "Unassigned".
+ */
+function getDepartmentName(
+  deal: BitrixDeal,
+  departmentIdToName: Record<string, string> | undefined
+): string {
+  const raw = deal.UF_CRM_1758023694929;
+  if (raw == null || raw === "") return "Unassigned";
+  const id = String(raw);
+  if (!departmentIdToName) return id;
+  return departmentIdToName[id] ?? "Unassigned";
 }
 
 export interface KpiStats {
@@ -72,14 +52,31 @@ export interface RejectionReasonRow {
   count: number;
 }
 
+export interface CommentListRow {
+  label: string;
+  count: number;
+}
+
+export interface SourceGroup {
+  name: string;
+  count: number;
+  sourceRate: number;
+}
+
 export function computeDashboardData(
   deals: BitrixDeal[],
-  stageIdToName?: Record<string, string>
+  stageIdToName?: Record<string, string>,
+  departmentIdToName?: Record<string, string>,
+  rejectionReasonIdToName?: Record<string, string>,
+  commentListIdToName?: Record<string, string>,
+  sourceIdToName?: Record<string, string>
 ): {
   kpi: KpiStats;
   stageGroups: StageGroup[];
   departmentGroups: DepartmentGroup[];
   rejectionReasons: RejectionReasonRow[];
+  commentListRows: CommentListRow[];
+  sourceGroups: SourceGroup[];
 } {
   const totalRequests = deals.length;
   const rejectedDeals = deals.filter((d) => isRejectionStage(d.STAGE_ID ?? ""));
@@ -103,20 +100,53 @@ export function computeDashboardData(
 
   const deptMap = new Map<string, number>();
   for (const d of deals) {
-    const dept = getDepartment(d);
+    const dept = getDepartmentName(d, departmentIdToName);
     deptMap.set(dept, (deptMap.get(dept) ?? 0) + 1);
   }
   const departmentGroups: DepartmentGroup[] = Array.from(deptMap.entries())
     .map(([name, count]) => ({ name, count }))
     .sort((a, b) => b.count - a.count);
 
+  // Rejection reasons = deals with UF_CRM_1753862633986 set, grouped by mapped string value
   const reasonMap = new Map<string, number>();
-  for (const d of rejectedDeals) {
-    const reason = getRejectionReason(d);
-    reasonMap.set(reason, (reasonMap.get(reason) ?? 0) + 1);
+  for (const d of deals) {
+    const raw = d.UF_CRM_1753862633986;
+    if (raw == null || raw === "") continue;
+    const id = String(raw);
+    const name = rejectionReasonIdToName?.[id] ?? id;
+    reasonMap.set(name, (reasonMap.get(name) ?? 0) + 1);
   }
   const rejectionReasons: RejectionReasonRow[] = Array.from(reasonMap.entries())
     .map(([reason, count]) => ({ reason, count }))
+    .sort((a, b) => b.count - a.count);
+
+  // Comment (list) = deals with UF_CRM_1768995573895 set, grouped by mapped string value
+  const commentMap = new Map<string, number>();
+  for (const d of deals) {
+    const raw = d.UF_CRM_1768995573895;
+    if (raw == null || raw === "") continue;
+    const id = String(raw);
+    const name = commentListIdToName?.[id] ?? id;
+    commentMap.set(name, (commentMap.get(name) ?? 0) + 1);
+  }
+  const commentListRows: CommentListRow[] = Array.from(commentMap.entries())
+    .map(([label, count]) => ({ label, count }))
+    .sort((a, b) => b.count - a.count);
+
+  // Requests by Source: group by SOURCE_ID (mapped to name), count and source rate (%), sort by count desc
+  const sourceMap = new Map<string, number>();
+  for (const d of deals) {
+    const raw = d.SOURCE_ID ?? "";
+    const id = raw === "" ? "__empty__" : String(raw);
+    const name = raw === "" ? "Unassigned" : (sourceIdToName?.[id] ?? id);
+    sourceMap.set(name, (sourceMap.get(name) ?? 0) + 1);
+  }
+  const sourceGroups: SourceGroup[] = Array.from(sourceMap.entries())
+    .map(([name, count]) => ({
+      name,
+      count,
+      sourceRate: totalRequests > 0 ? (count / totalRequests) * 100 : 0,
+    }))
     .sort((a, b) => b.count - a.count);
 
   return {
@@ -129,5 +159,7 @@ export function computeDashboardData(
     stageGroups,
     departmentGroups,
     rejectionReasons,
+    commentListRows,
+    sourceGroups,
   };
 }
