@@ -57,8 +57,8 @@ export function RequestsByStageDonut({ stageGroups }: RequestsByStageDonutProps)
               ))}
             </Pie>
             <Tooltip
-              formatter={(value: number, _name: string, props: { payload: { percentage: string } }) =>
-                [`${value} (${props.payload.percentage}%)`, "Count"]
+              formatter={(value: number, _name: string, props: any) =>
+                [`${value} (${props?.payload?.percentage ?? "0"}%)`, "Count"]
               }
               contentStyle={{
                 border: "1px solid #e5e7eb",
@@ -71,9 +71,9 @@ export function RequestsByStageDonut({ stageGroups }: RequestsByStageDonutProps)
               align="right"
               verticalAlign="middle"
               wrapperStyle={{ paddingLeft: 24 }}
-              formatter={(value, entry) => (
+              formatter={(value: string, entry: any) => (
                 <span className="text-sm text-gray-600">
-                  {entry.payload?.name ?? value}
+                  {entry?.payload?.name ?? value}
                 </span>
               )}
             />
