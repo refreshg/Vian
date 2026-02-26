@@ -29,10 +29,19 @@ interface BitrixStatusItem {
   [key: string]: unknown;
 }
 
+export interface StageNameMapResult {
+  /** STATUS_ID -> display NAME for the current pipeline */
+  nameMap: Record<string, string>;
+  /** All stage IDs in pipeline order (from crm.status.list) */
+  stageIdsInOrder: string[];
+}
+
 /**
- * Fetches stage statuses for the current pipeline and returns STATUS_ID -> NAME.
+ * Fetches all stages for the current pipeline via crm.status.list.
+ * ENTITY_ID is DEAL_STAGE for category 0, or DEAL_STAGE_{categoryId} for specific pipeline.
+ * Returns both the stage name map and the ordered list of stage IDs (so charts can show all stages, including 0).
  */
-export async function fetchStageNameMap(): Promise<Record<string, string>> {
+export async function fetchStageNameMap(): Promise<StageNameMapResult> {
   const baseUrl = getWebhookUrl();
   const endpoint = `${baseUrl}/crm.status.list`;
 
@@ -59,13 +68,15 @@ export async function fetchStageNameMap(): Promise<Record<string, string>> {
   }
 
   const list = (data.result ?? []) as BitrixStatusItem[];
-  const map: Record<string, string> = {};
+  const nameMap: Record<string, string> = {};
+  const stageIdsInOrder: string[] = [];
   for (const item of list) {
     if (item.STATUS_ID && item.NAME) {
-      map[item.STATUS_ID] = item.NAME;
+      nameMap[item.STATUS_ID] = item.NAME;
+      stageIdsInOrder.push(item.STATUS_ID);
     }
   }
-  return map;
+  return { nameMap, stageIdsInOrder };
 }
 
 /**

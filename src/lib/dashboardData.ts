@@ -76,7 +76,8 @@ export function computeDashboardData(
   rejectionReasonIdToName?: Record<string, string>,
   commentListIdToName?: Record<string, string>,
   sourceIdToName?: Record<string, string>,
-  countryIdToName?: Record<string, string>
+  countryIdToName?: Record<string, string>,
+  allStageIdsInOrder?: string[]
 ): {
   kpi: KpiStats;
   stageGroups: StageGroup[];
@@ -93,18 +94,38 @@ export function computeDashboardData(
     totalRequests > 0 ? Math.round((totalRejections / totalRequests) * 100) : 0;
   const avgDelayHours = 1; // Placeholder until custom field or logic exists
 
+  // Build stage counts: if we have pipeline order, start with all stages at 0, then merge deal counts
   const stageMap = new Map<string, number>();
+  if (allStageIdsInOrder && allStageIdsInOrder.length > 0) {
+    for (const id of allStageIdsInOrder) {
+      stageMap.set(id, 0);
+    }
+  }
   for (const d of deals) {
     const id = d.STAGE_ID ?? "Unknown";
     stageMap.set(id, (stageMap.get(id) ?? 0) + 1);
   }
-  const stageGroups: StageGroup[] = Array.from(stageMap.entries()).map(
-    ([stageId, value]) => ({
-      name: stageIdToName?.[stageId] ?? stageLabel(stageId),
-      value,
-      stageId,
-    })
-  );
+  const stageGroups: StageGroup[] = (allStageIdsInOrder && allStageIdsInOrder.length > 0
+    ? allStageIdsInOrder
+    : Array.from(stageMap.keys())
+  ).map((stageId) => ({
+    stageId,
+    name: stageIdToName?.[stageId] ?? stageLabel(stageId),
+    value: stageMap.get(stageId) ?? 0,
+  }));
+  // Append any stages that appear in deals but not in pipeline list (e.g. unknown/legacy)
+  if (allStageIdsInOrder && allStageIdsInOrder.length > 0) {
+    const pipelineSet = new Set(allStageIdsInOrder);
+    Array.from(stageMap.entries()).forEach(([stageId, value]) => {
+      if (!pipelineSet.has(stageId) && value > 0) {
+        stageGroups.push({
+          stageId,
+          name: stageIdToName?.[stageId] ?? stageLabel(stageId),
+          value,
+        });
+      }
+    });
+  }
 
   const deptMap = new Map<string, number>();
   for (const d of deals) {

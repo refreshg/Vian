@@ -25,6 +25,7 @@ export default function DashboardPage() {
   const [endDate, setEndDate] = useState(() => formatDate(new Date()));
   const [deals, setDeals] = useState<BitrixDeal[]>([]);
   const [stageNameMap, setStageNameMap] = useState<Record<string, string>>({});
+  const [allStageIdsInOrder, setAllStageIdsInOrder] = useState<string[]>([]);
   const [departmentIdToName, setDepartmentIdToName] = useState<
     Record<string, string>
   >({});
@@ -53,6 +54,7 @@ export default function DashboardPage() {
       if (!res.ok) throw new Error(data.error || "Failed to fetch");
       setDeals(data.result ?? []);
       setStageNameMap(data.stageNameMap ?? {});
+      setAllStageIdsInOrder(data.allStageIdsInOrder ?? []);
       setDepartmentIdToName(data.departmentIdToName ?? {});
       setRejectionReasonIdToName(data.rejectionReasonIdToName ?? {});
       setCommentListIdToName(data.commentListIdToName ?? {});
@@ -62,6 +64,7 @@ export default function DashboardPage() {
       setError(e instanceof Error ? e.message : "Something went wrong");
       setDeals([]);
       setStageNameMap({});
+      setAllStageIdsInOrder([]);
       setDepartmentIdToName({});
       setRejectionReasonIdToName({});
       setCommentListIdToName({});
@@ -84,7 +87,8 @@ export default function DashboardPage() {
     rejectionReasonIdToName,
     commentListIdToName,
     sourceIdToName,
-    countryIdToName
+    countryIdToName,
+    allStageIdsInOrder
   );
 
   return (

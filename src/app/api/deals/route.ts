@@ -26,7 +26,7 @@ export async function GET(request: NextRequest) {
   try {
     const [
       deals,
-      stageNameMap,
+      stageResult,
       sourceIdToName,
       departmentIdToName,
       rejectionReasonIdToName,
@@ -44,7 +44,8 @@ export async function GET(request: NextRequest) {
     return NextResponse.json({
       result: deals,
       total: deals.length,
-      stageNameMap,
+      stageNameMap: stageResult.nameMap,
+      allStageIdsInOrder: stageResult.stageIdsInOrder,
       sourceIdToName,
       departmentIdToName,
       rejectionReasonIdToName,
