@@ -116,7 +116,7 @@ export function computeSlaMetrics(
     if (!dealId) continue;
     const dealHistory = historyByDeal[dealId];
     if (!dealHistory || dealHistory.length === 0) continue;
-    const dateCreate = (deal as Record<string, unknown>).DATE_CREATE;
+    const dateCreate = (deal as any).DATE_CREATE;
     if (dateCreate == null || typeof dateCreate !== "string") continue;
     const firstTransition = dealHistory[0];
     const firstTime = getTimestampFromHistory(firstTransition);
