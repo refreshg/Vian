@@ -84,6 +84,7 @@ export async function GET(request: NextRequest) {
       commentListIdToName,
       countryIdToName,
       slaMetrics,
+      stageHistoryCount: safeStageHistories.length,
     });
   } catch (err) {
     const message = err instanceof Error ? err.message : "Failed to fetch deals";

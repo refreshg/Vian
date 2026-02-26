@@ -44,6 +44,7 @@ export default function DashboardPage() {
     Record<string, string>
   >({});
   const [slaMetrics, setSlaMetrics] = useState<SlaSummary | null>(null);
+  const [stageHistoryCount, setStageHistoryCount] = useState<number>(0);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -64,6 +65,7 @@ export default function DashboardPage() {
       setSourceIdToName(data.sourceIdToName ?? {});
       setCountryIdToName(data.countryIdToName ?? {});
       setSlaMetrics(data.slaMetrics ?? null);
+      setStageHistoryCount(data.stageHistoryCount ?? 0);
     } catch (e) {
       setError(e instanceof Error ? e.message : "Something went wrong");
       setDeals([]);
@@ -75,6 +77,7 @@ export default function DashboardPage() {
       setSourceIdToName({});
       setCountryIdToName({});
       setSlaMetrics(null);
+      setStageHistoryCount(0);
     } finally {
       setLoading(false);
     }
@@ -134,7 +137,7 @@ export default function DashboardPage() {
         {!loading && (
           <>
             <div className="mb-6">
-              <SlaMetrics metrics={slaMetrics} />
+              <SlaMetrics metrics={slaMetrics} historyRecordCount={stageHistoryCount} />
             </div>
             <div className="grid grid-cols-1 gap-6 lg:grid-cols-[5fr_7fr]">
               {/* Left column */}
