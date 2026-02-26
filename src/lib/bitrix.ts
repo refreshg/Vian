@@ -179,7 +179,8 @@ export async function fetchDealFieldOptions(
 export interface StageHistoryItem {
   ID: string;
   OWNER_ID: string | number;
-  STAGE_ID: string;
+  STAGE_ID?: string;
+  STATUS_ID?: string;
   CREATED_TIME: string;
   [key: string]: unknown;
 }

@@ -39,6 +39,10 @@ export async function GET(request: NextRequest) {
     }
     const safeStageHistories = Array.isArray(stageHistories) ? stageHistories : [];
 
+    if (safeStageHistories.length > 0) {
+      console.log("Sample Stage History record:", safeStageHistories[0]);
+    }
+
     const [
       stageResult,
       sourceIdToName,

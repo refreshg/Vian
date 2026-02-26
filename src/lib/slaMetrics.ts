@@ -41,17 +41,29 @@ function buildHistoryByDeal(
   return byId;
 }
 
-function findStageIdByName(
-  stageIdToName: Record<string, string> | undefined,
-  targetName: string
-): string | undefined {
-  if (!stageIdToName) return undefined;
-  const normalize = (s: string) => s.trim().toLowerCase();
-  const target = normalize(targetName);
-  for (const [id, name] of Object.entries(stageIdToName)) {
-    if (normalize(name) === target) return id;
-  }
-  return undefined;
+const normalizeName = (s: string) => s.trim().toLowerCase();
+
+/**
+ * Get the human-readable stage name for a history record using the pipeline map.
+ * History uses STAGE_ID (or STATUS_ID); we translate via crm.status.list result.
+ */
+function getStageNameFromHistory(
+  h: StageHistoryItem,
+  stageIdToName: Record<string, string>
+): string {
+  const id = (h.STAGE_ID ?? h.STATUS_ID ?? "") as string;
+  if (!id) return "";
+  return stageIdToName[id] ?? id;
+}
+
+/** Check if a history record's stage (translated to name) matches the target name. */
+function stageRecordMatchesName(
+  h: StageHistoryItem,
+  targetName: string,
+  stageIdToName: Record<string, string>
+): boolean {
+  const name = getStageNameFromHistory(h, stageIdToName);
+  return normalizeName(name) === normalizeName(targetName);
 }
 
 function makeMetric(
@@ -73,71 +85,65 @@ export function computeSlaMetrics(
   const safeHistories = Array.isArray(histories) ? histories : [];
   const historyByDeal = buildHistoryByDeal(safeHistories);
 
-  // 1. First Communication on Time (< 1 hour from DATE_CREATE to first stage change)
+  const stageNameMap = stageIdToName ?? {};
+
+  // 1. First Communication on Time (< 1 hour from DATE_CREATE to very first logged stage transition)
   let firstOnTime = 0;
   let firstTotal = 0;
   for (const deal of safeDeals) {
     const dealHistory = historyByDeal[deal.ID];
     if (!dealHistory || dealHistory.length === 0 || !deal.DATE_CREATE) continue;
-    const firstChange = dealHistory[0];
-    const hours = diffHours(deal.DATE_CREATE, firstChange.CREATED_TIME);
+    const firstTransition = dealHistory[0];
+    const hours = diffHours(deal.DATE_CREATE, firstTransition.CREATED_TIME);
     if (!Number.isFinite(hours)) continue;
     firstTotal += 1;
     if (hours < 1) firstOnTime += 1;
   }
 
   // 2. Follow-up on Time (< 24 hours in "Follow up in 24 Hours" stage)
-  const followUpStageId = findStageIdByName(
-    stageIdToName,
-    "Follow up in 24 Hours"
-  );
+  // Match by translating history STAGE_ID to name via pipeline map, then compare to target name.
+  const followUpTargetName = "Follow up in 24 Hours";
   let followOnTime = 0;
   let followTotal = 0;
-  if (followUpStageId) {
-    for (const deal of safeDeals) {
-      const dealHistory = historyByDeal[deal.ID];
-      if (!dealHistory || dealHistory.length === 0) continue;
-      const enterIndex = dealHistory.findIndex(
-        (h) => h.STAGE_ID === followUpStageId
-      );
-      if (enterIndex === -1) continue;
-      const enterTime = dealHistory[enterIndex].CREATED_TIME;
-      const exitRecord = dealHistory
-        .slice(enterIndex + 1)
-        .find((h) => h.STAGE_ID !== followUpStageId);
-      if (!exitRecord) continue;
-      const hours = diffHours(enterTime, exitRecord.CREATED_TIME);
-      if (!Number.isFinite(hours)) continue;
-      followTotal += 1;
-      if (hours < 24) followOnTime += 1;
-    }
+  for (const deal of safeDeals) {
+    const dealHistory = historyByDeal[deal.ID];
+    if (!dealHistory || dealHistory.length === 0) continue;
+    const enterIndex = dealHistory.findIndex((h) =>
+      stageRecordMatchesName(h, followUpTargetName, stageNameMap)
+    );
+    if (enterIndex === -1) continue;
+    const enterTime = dealHistory[enterIndex].CREATED_TIME;
+    const exitRecord = dealHistory
+      .slice(enterIndex + 1)
+      .find((h) => !stageRecordMatchesName(h, followUpTargetName, stageNameMap));
+    if (!exitRecord) continue;
+    const hours = diffHours(enterTime, exitRecord.CREATED_TIME);
+    if (!Number.isFinite(hours)) continue;
+    followTotal += 1;
+    if (hours < 24) followOnTime += 1;
   }
 
   // 3. Price sharing to Patient on Time (< 24 hours in "Offer Finalization for Patient" stage)
-  const priceStageId = findStageIdByName(
-    stageIdToName,
-    "Offer Finalization for Patient"
-  );
+  // Match by translating history STAGE_ID to name via pipeline map, then compare to target name.
+  const priceTargetName = "Offer Finalization for Patient";
   let priceOnTime = 0;
   let priceTotal = 0;
-  if (priceStageId) {
-    for (const deal of safeDeals) {
-      const dealHistory = historyByDeal[deal.ID];
-      if (!dealHistory || dealHistory.length === 0) continue;
-      const enterIndex = dealHistory.findIndex(
-        (h) => h.STAGE_ID === priceStageId
-      );
-      if (enterIndex === -1) continue;
-      const enterTime = dealHistory[enterIndex].CREATED_TIME;
-      const exitRecord = dealHistory
-        .slice(enterIndex + 1)
-        .find((h) => h.STAGE_ID !== priceStageId);
-      if (!exitRecord) continue;
-      const hours = diffHours(enterTime, exitRecord.CREATED_TIME);
-      if (!Number.isFinite(hours)) continue;
-      priceTotal += 1;
-      if (hours < 24) priceOnTime += 1;
-    }
+  for (const deal of safeDeals) {
+    const dealHistory = historyByDeal[deal.ID];
+    if (!dealHistory || dealHistory.length === 0) continue;
+    const enterIndex = dealHistory.findIndex((h) =>
+      stageRecordMatchesName(h, priceTargetName, stageNameMap)
+    );
+    if (enterIndex === -1) continue;
+    const enterTime = dealHistory[enterIndex].CREATED_TIME;
+    const exitRecord = dealHistory
+      .slice(enterIndex + 1)
+      .find((h) => !stageRecordMatchesName(h, priceTargetName, stageNameMap));
+    if (!exitRecord) continue;
+    const hours = diffHours(enterTime, exitRecord.CREATED_TIME);
+    if (!Number.isFinite(hours)) continue;
+    priceTotal += 1;
+    if (hours < 24) priceOnTime += 1;
   }
 
   return {
