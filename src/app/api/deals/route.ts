@@ -17,6 +17,7 @@ export async function GET(request: NextRequest) {
   const searchParams = request.nextUrl.searchParams;
   const startDate = searchParams.get("startDate");
   const endDate = searchParams.get("endDate");
+  const category = searchParams.get("category") ?? "1";
 
   if (!startDate || !endDate) {
     return NextResponse.json(
@@ -25,17 +26,21 @@ export async function GET(request: NextRequest) {
     );
   }
 
-  /** Category ID 1 = pipeline used for SLA (stage IDs are pipeline-specific). */
-  const SLA_CATEGORY_ID = "1";
-
   try {
-    const dealsRaw = await fetchAllDealsInRange({ startDate, endDate });
+    const dealsRaw = await fetchAllDealsInRange({
+      startDate,
+      endDate,
+      categoryId: category,
+    });
     const deals = Array.isArray(dealsRaw) ? dealsRaw : [];
-    const dealsCategory1 = deals.filter(
-      (d) => d && typeof d === "object" && String(d.CATEGORY_ID ?? "") === SLA_CATEGORY_ID
+    const dealsForCategory = deals.filter(
+      (d) =>
+        d &&
+        typeof d === "object" &&
+        String(d.CATEGORY_ID ?? "") === category
     );
 
-    const dealIds = dealsCategory1
+    const dealIds = dealsForCategory
       .map((d) => (d && typeof d === "object" && "ID" in d ? String(d.ID) : ""))
       .filter(Boolean);
 
@@ -55,7 +60,7 @@ export async function GET(request: NextRequest) {
       commentListIdToName,
       countryIdToName,
     ] = await Promise.all([
-      fetchStageNameMap(),
+      fetchStageNameMap(category),
       fetchSourceNameMap(),
       fetchDealFieldOptions(DEPARTMENT_FIELD_ID),
       fetchDealFieldOptions(REJECTION_REASONS_FIELD_ID),
@@ -67,7 +72,7 @@ export async function GET(request: NextRequest) {
     const priceSharingDebug: PriceSharingDebugRow[] = [];
     try {
       slaMetrics = computeSlaMetrics(
-        dealsCategory1,
+        dealsForCategory,
         safeStageHistories,
         stageResult?.nameMap ?? {},
         { priceSharingDebugOut: priceSharingDebug }

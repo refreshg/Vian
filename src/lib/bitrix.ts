@@ -10,16 +10,16 @@ const getWebhookUrl = (): string => {
   return url.replace(/\/$/, "");
 };
 
-/** Category/pipeline ID for deal list filter. Default "1" so SLA metrics use a single pipeline (stage IDs differ per pipeline). */
-function getCategoryId(): string {
-  return process.env.BITRIX_CATEGORY_ID ?? "1";
+/** Category/pipeline ID for deal list filter. Override from API; default "1". */
+function getCategoryId(override?: string): string {
+  return override ?? process.env.BITRIX_CATEGORY_ID ?? "1";
 }
 
 /** ENTITY_ID for crm.status.list: DEAL_STAGE for default pipeline, DEAL_STAGE_{id} for specific. */
-function getStatusEntityId(): string {
-  const categoryId = getCategoryId();
-  if (categoryId === "0") return "DEAL_STAGE";
-  return `DEAL_STAGE_${categoryId}`;
+function getStatusEntityId(categoryId?: string): string {
+  const id = getCategoryId(categoryId);
+  if (id === "0") return "DEAL_STAGE";
+  return `DEAL_STAGE_${id}`;
 }
 
 /** Response shape from crm.status.list (each item in result). */
@@ -37,16 +37,16 @@ export interface StageNameMapResult {
 }
 
 /**
- * Fetches all stages for the current pipeline via crm.status.list.
+ * Fetches all stages for the given pipeline via crm.status.list.
  * ENTITY_ID is DEAL_STAGE for category 0, or DEAL_STAGE_{categoryId} for specific pipeline.
  * Returns both the stage name map and the ordered list of stage IDs (so charts can show all stages, including 0).
  */
-export async function fetchStageNameMap(): Promise<StageNameMapResult> {
+export async function fetchStageNameMap(categoryId?: string): Promise<StageNameMapResult> {
   const baseUrl = getWebhookUrl();
   const endpoint = `${baseUrl}/crm.status.list`;
 
   const body = {
-    FILTER: { ENTITY_ID: getStatusEntityId() },
+    FILTER: { ENTITY_ID: getStatusEntityId(categoryId) },
   };
 
   const response = await fetch(endpoint, {
@@ -291,11 +291,12 @@ export async function fetchStageHistoryForDeals(
 export async function fetchDealList(params: {
   startDate: string;
   endDate: string;
+  categoryId?: string;
 }): Promise<BitrixDealListResponse> {
   const baseUrl = getWebhookUrl();
   const endpoint = `${baseUrl}/crm.deal.list`;
 
-  const categoryId = getCategoryId();
+  const categoryId = getCategoryId(params.categoryId);
   const filter: Record<string, string> = {
     ">=DATE_CREATE": params.startDate,
     "<=DATE_CREATE": params.endDate,
@@ -347,16 +348,17 @@ export async function fetchDealList(params: {
 export async function fetchAllDealsInRange(params: {
   startDate: string;
   endDate: string;
+  categoryId?: string;
 }): Promise<BitrixDealListResponse["result"]> {
   const all: BitrixDealListResponse["result"] = [];
   let start = 0;
   const pageSize = 50;
+  const categoryId = getCategoryId(params.categoryId);
 
   while (true) {
     const baseUrl = getWebhookUrl();
     const endpoint = `${baseUrl}/crm.deal.list`;
 
-  const categoryId = getCategoryId();
   const filter: Record<string, string> = {
     ">=DATE_CREATE": params.startDate,
     "<=DATE_CREATE": params.endDate,
