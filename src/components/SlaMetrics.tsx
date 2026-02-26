@@ -33,7 +33,7 @@ export function SlaMetrics({ metrics }: SlaMetricsProps) {
             </span>
             <span className="mt-1 text-sm text-gray-600">
               {m.totalCount > 0
-                ? `${m.onTimeCount} / ${m.totalCount} deals on time`
+                ? `${m.onTimeCount} on time (out of ${m.totalCount})`
                 : "No qualifying deals in range"}
             </span>
             <span className="mt-2 text-sm font-medium text-gray-900">

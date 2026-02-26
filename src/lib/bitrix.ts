@@ -10,9 +10,9 @@ const getWebhookUrl = (): string => {
   return url.replace(/\/$/, "");
 };
 
-/** Category/pipeline ID for deal list filter. Use "0" for default pipeline. */
+/** Category/pipeline ID for deal list filter. Default "1" so SLA metrics use a single pipeline (stage IDs differ per pipeline). */
 function getCategoryId(): string {
-  return process.env.BITRIX_CATEGORY_ID ?? "0";
+  return process.env.BITRIX_CATEGORY_ID ?? "1";
 }
 
 /** ENTITY_ID for crm.status.list: DEAL_STAGE for default pipeline, DEAL_STAGE_{id} for specific. */
@@ -200,8 +200,45 @@ export async function fetchStageHistoryForDeals(
   const all: StageHistoryItem[] = [];
   const chunkSize = 20;
 
+  function asNumberArray(values: string[]): number[] {
+    return values
+      .map((v) => Number(v))
+      .filter((n) => Number.isFinite(n) && n > 0);
+  }
+
+  function isStageHistoryItemLike(value: unknown): value is StageHistoryItem {
+    if (!value || typeof value !== "object") return false;
+    const v = value as Record<string, unknown>;
+    return (
+      ("OWNER_ID" in v || "ownerId" in v) &&
+      typeof v.CREATED_TIME === "string" &&
+      (typeof v.OWNER_ID === "string" ||
+        typeof v.OWNER_ID === "number" ||
+        typeof (v as any).ownerId === "string" ||
+        typeof (v as any).ownerId === "number")
+    );
+  }
+
+  function extractItemsAndNext(data: any): { items: StageHistoryItem[]; next?: number } {
+    const raw = data?.result;
+    let itemsRaw: unknown = raw;
+    let nextRaw: unknown = data?.next;
+
+    // Some Bitrix methods return { result: { items: [...], next: N } }
+    if (raw && typeof raw === "object" && !Array.isArray(raw)) {
+      if (Array.isArray((raw as any).items)) itemsRaw = (raw as any).items;
+      if (typeof (raw as any).next === "number") nextRaw = (raw as any).next;
+    }
+
+    const items = Array.isArray(itemsRaw) ? (itemsRaw.filter(isStageHistoryItemLike) as StageHistoryItem[]) : [];
+    const next = typeof nextRaw === "number" ? nextRaw : undefined;
+    return { items, next };
+  }
+
   for (let i = 0; i < ids.length; i += chunkSize) {
     const idsChunk = ids.slice(i, i + chunkSize);
+    const idsChunkNumbers = asNumberArray(idsChunk);
+    const ownerIdFilter = idsChunkNumbers.length > 0 ? idsChunkNumbers : idsChunk;
     let start = 0;
 
     // Paginate through history for this chunk of deals.
@@ -210,7 +247,7 @@ export async function fetchStageHistoryForDeals(
     while (true) {
       const body: Record<string, unknown> = {
         entityTypeId: 2,
-        filter: { OWNER_ID: idsChunk },
+        filter: { OWNER_ID: ownerIdFilter },
         order: { OWNER_ID: "ASC", CREATED_TIME: "ASC" },
         select: ["ID", "OWNER_ID", "STAGE_ID", "CREATED_TIME"],
         start,
@@ -234,16 +271,13 @@ export async function fetchStageHistoryForDeals(
         throw new Error(data.error_description || data.error);
       }
 
-      const raw = data.result;
-      const items: StageHistoryItem[] = Array.isArray(raw)
-        ? raw
-        : raw && typeof raw === "object"
-          ? (Object.values(raw) as StageHistoryItem[])
-          : [];
-      all.push(...(Array.isArray(items) ? items : []));
+      const { items, next } = extractItemsAndNext(data);
+      all.push(...items);
 
-      if (!data.next || items.length === 0) break;
-      start = data.next;
+      if (items.length === 0) break;
+      if (typeof next !== "number") break;
+      if (next === start) break; // safety against infinite loops
+      start = next;
     }
   }
 
@@ -275,6 +309,7 @@ export async function fetchDealList(params: {
       "OPPORTUNITY",
       "STAGE_ID",
       "DATE_CREATE",
+      "CATEGORY_ID",
       "SOURCE_ID",
       "UF_CRM_1758023694929",
       "UF_CRM_1753862633986",
@@ -335,6 +370,7 @@ export async function fetchAllDealsInRange(params: {
       "OPPORTUNITY",
       "STAGE_ID",
       "DATE_CREATE",
+      "CATEGORY_ID",
       "SOURCE_ID",
       "UF_CRM_1758023694929",
       "UF_CRM_1753862633986",

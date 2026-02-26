@@ -64,6 +64,9 @@ export default function DashboardPage() {
       setSourceIdToName(data.sourceIdToName ?? {});
       setCountryIdToName(data.countryIdToName ?? {});
       setSlaMetrics(data.slaMetrics ?? null);
+      if (Array.isArray(data.priceSharingDebug)) {
+        console.log("SLA Verification - Price Sharing:", data.priceSharingDebug);
+      }
     } catch (e) {
       setError(e instanceof Error ? e.message : "Something went wrong");
       setDeals([]);

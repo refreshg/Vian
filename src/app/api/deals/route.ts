@@ -6,7 +6,7 @@ import {
   fetchDealFieldOptions,
   fetchStageHistoryForDeals,
 } from "@/lib/bitrix";
-import { computeSlaMetrics } from "@/lib/slaMetrics";
+import { computeSlaMetrics, type PriceSharingDebugRow } from "@/lib/slaMetrics";
 
 const DEPARTMENT_FIELD_ID = "UF_CRM_1758023694929";
 const REJECTION_REASONS_FIELD_ID = "UF_CRM_1753862633986";
@@ -25,11 +25,19 @@ export async function GET(request: NextRequest) {
     );
   }
 
+  /** Category ID 1 = pipeline used for SLA (stage IDs are pipeline-specific). */
+  const SLA_CATEGORY_ID = "1";
+
   try {
     const dealsRaw = await fetchAllDealsInRange({ startDate, endDate });
     const deals = Array.isArray(dealsRaw) ? dealsRaw : [];
+    const dealsCategory1 = deals.filter(
+      (d) => d && typeof d === "object" && String(d.CATEGORY_ID ?? "") === SLA_CATEGORY_ID
+    );
 
-    const dealIds = deals.map((d) => (d && typeof d === "object" && "ID" in d ? String(d.ID) : "")).filter(Boolean);
+    const dealIds = dealsCategory1
+      .map((d) => (d && typeof d === "object" && "ID" in d ? String(d.ID) : ""))
+      .filter(Boolean);
 
     let stageHistories: Awaited<ReturnType<typeof fetchStageHistoryForDeals>> = [];
     try {
@@ -56,11 +64,13 @@ export async function GET(request: NextRequest) {
     ]);
 
     let slaMetrics;
+    const priceSharingDebug: PriceSharingDebugRow[] = [];
     try {
       slaMetrics = computeSlaMetrics(
-        deals,
+        dealsCategory1,
         safeStageHistories,
-        stageResult?.nameMap ?? {}
+        stageResult?.nameMap ?? {},
+        { priceSharingDebugOut: priceSharingDebug }
       );
     } catch {
       slaMetrics = {
@@ -80,6 +90,7 @@ export async function GET(request: NextRequest) {
       commentListIdToName,
       countryIdToName,
       slaMetrics,
+      priceSharingDebug,
     });
   } catch (err) {
     const message = err instanceof Error ? err.message : "Failed to fetch deals";

@@ -4,6 +4,8 @@ export interface BitrixDeal {
   OPPORTUNITY: string;
   STAGE_ID: string;
   DATE_CREATE: string;
+  /** Pipeline / category ID; must be 1 for SLA metrics (stage IDs are pipeline-specific) */
+  CATEGORY_ID?: string | number;
   /** Standard Bitrix24 deal source (use crm.status.list ENTITY_ID=SOURCE for names) */
   SOURCE_ID?: string;
   /** Custom dropdown: department (ID UF_CRM_1758023694929) */
