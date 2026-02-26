@@ -63,13 +63,20 @@ export interface SourceGroup {
   sourceRate: number;
 }
 
+export interface CountryGroup {
+  name: string;
+  count: number;
+  percentage: number;
+}
+
 export function computeDashboardData(
   deals: BitrixDeal[],
   stageIdToName?: Record<string, string>,
   departmentIdToName?: Record<string, string>,
   rejectionReasonIdToName?: Record<string, string>,
   commentListIdToName?: Record<string, string>,
-  sourceIdToName?: Record<string, string>
+  sourceIdToName?: Record<string, string>,
+  countryIdToName?: Record<string, string>
 ): {
   kpi: KpiStats;
   stageGroups: StageGroup[];
@@ -77,6 +84,7 @@ export function computeDashboardData(
   rejectionReasons: RejectionReasonRow[];
   commentListRows: CommentListRow[];
   sourceGroups: SourceGroup[];
+  countryGroups: CountryGroup[];
 } {
   const totalRequests = deals.length;
   const rejectedDeals = deals.filter((d) => isRejectionStage(d.STAGE_ID ?? ""));
@@ -149,6 +157,27 @@ export function computeDashboardData(
     }))
     .sort((a, b) => b.count - a.count);
 
+  // Request rate by country: map raw country ID to name (or "(Blank)"), group, percentage, sort desc
+  const countryMap = new Map<string, number>();
+  for (const d of deals) {
+    const raw = d.UF_CRM_1769688668259;
+    const name =
+      raw == null || raw === ""
+        ? "(Blank)"
+        : (countryIdToName?.[String(raw)] ?? String(raw));
+    countryMap.set(name, (countryMap.get(name) ?? 0) + 1);
+  }
+  const countryGroups: CountryGroup[] = Array.from(countryMap.entries())
+    .map(([name, count]) => ({
+      name,
+      count,
+      percentage:
+        totalRequests > 0
+          ? Math.round((count / totalRequests) * 100 * 100) / 100
+          : 0,
+    }))
+    .sort((a, b) => b.count - a.count);
+
   return {
     kpi: {
       totalRequests,
@@ -161,5 +190,6 @@ export function computeDashboardData(
     rejectionReasons,
     commentListRows,
     sourceGroups,
+    countryGroups,
   };
 }

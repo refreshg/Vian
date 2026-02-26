@@ -9,6 +9,7 @@ import {
 const DEPARTMENT_FIELD_ID = "UF_CRM_1758023694929";
 const REJECTION_REASONS_FIELD_ID = "UF_CRM_1753862633986";
 const COMMENT_LIST_FIELD_ID = "UF_CRM_1768995573895";
+const COUNTRY_FIELD_ID = "UF_CRM_1769688668259";
 
 export async function GET(request: NextRequest) {
   const searchParams = request.nextUrl.searchParams;
@@ -30,6 +31,7 @@ export async function GET(request: NextRequest) {
       departmentIdToName,
       rejectionReasonIdToName,
       commentListIdToName,
+      countryIdToName,
     ] = await Promise.all([
       fetchAllDealsInRange({ startDate, endDate }),
       fetchStageNameMap(),
@@ -37,6 +39,7 @@ export async function GET(request: NextRequest) {
       fetchDealFieldOptions(DEPARTMENT_FIELD_ID),
       fetchDealFieldOptions(REJECTION_REASONS_FIELD_ID),
       fetchDealFieldOptions(COMMENT_LIST_FIELD_ID),
+      fetchDealFieldOptions(COUNTRY_FIELD_ID),
     ]);
     return NextResponse.json({
       result: deals,
@@ -46,6 +49,7 @@ export async function GET(request: NextRequest) {
       departmentIdToName,
       rejectionReasonIdToName,
       commentListIdToName,
+      countryIdToName,
     });
   } catch (err) {
     const message = err instanceof Error ? err.message : "Failed to fetch deals";

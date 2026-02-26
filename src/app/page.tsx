@@ -8,7 +8,7 @@ import { RequestsByDepartmentsBar } from "@/components/RequestsByDepartmentsBar"
 import { RequestsBySourceChart } from "@/components/RequestsBySourceChart";
 import { RejectionReasonsTable } from "@/components/RejectionReasonsTable";
 import { CommentListTable } from "@/components/CommentListTable";
-import { RequestRateByCountryPlaceholder } from "@/components/RequestRateByCountryPlaceholder";
+import { CountryChart } from "@/components/CountryChart";
 import { computeDashboardData } from "@/lib/dashboardData";
 import type { BitrixDeal } from "@/types/bitrix";
 
@@ -37,6 +37,9 @@ export default function DashboardPage() {
   const [sourceIdToName, setSourceIdToName] = useState<
     Record<string, string>
   >({});
+  const [countryIdToName, setCountryIdToName] = useState<
+    Record<string, string>
+  >({});
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -54,6 +57,7 @@ export default function DashboardPage() {
       setRejectionReasonIdToName(data.rejectionReasonIdToName ?? {});
       setCommentListIdToName(data.commentListIdToName ?? {});
       setSourceIdToName(data.sourceIdToName ?? {});
+      setCountryIdToName(data.countryIdToName ?? {});
     } catch (e) {
       setError(e instanceof Error ? e.message : "Something went wrong");
       setDeals([]);
@@ -62,6 +66,7 @@ export default function DashboardPage() {
       setRejectionReasonIdToName({});
       setCommentListIdToName({});
       setSourceIdToName({});
+      setCountryIdToName({});
     } finally {
       setLoading(false);
     }
@@ -78,7 +83,8 @@ export default function DashboardPage() {
     departmentIdToName,
     rejectionReasonIdToName,
     commentListIdToName,
-    sourceIdToName
+    sourceIdToName,
+    countryIdToName
   );
 
   return (
@@ -131,7 +137,7 @@ export default function DashboardPage() {
                 departmentGroups={dashboard.departmentGroups}
               />
               <RequestsBySourceChart sourceGroups={dashboard.sourceGroups} />
-              <RequestRateByCountryPlaceholder />
+              <CountryChart countryGroups={dashboard.countryGroups} />
             </div>
           </div>
         )}
