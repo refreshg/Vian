@@ -39,10 +39,6 @@ export async function GET(request: NextRequest) {
     }
     const safeStageHistories = Array.isArray(stageHistories) ? stageHistories : [];
 
-    if (safeStageHistories.length > 0) {
-      console.log("Sample Stage History record:", safeStageHistories[0]);
-    }
-
     const [
       stageResult,
       sourceIdToName,
@@ -84,9 +80,6 @@ export async function GET(request: NextRequest) {
       commentListIdToName,
       countryIdToName,
       slaMetrics,
-      stageHistoryCount: safeStageHistories.length,
-      stageHistorySample:
-        safeStageHistories.length > 0 ? safeStageHistories[0] : null,
     });
   } catch (err) {
     const message = err instanceof Error ? err.message : "Failed to fetch deals";

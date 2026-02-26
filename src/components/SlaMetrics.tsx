@@ -4,17 +4,9 @@ import type { SlaSummary } from "@/lib/slaMetrics";
 
 interface SlaMetricsProps {
   metrics: SlaSummary | null;
-  /** Debug: number of stage history records fetched for the current deals. */
-  historyRecordCount?: number;
-  /** Debug: first stage history record (raw JSON) to inspect field names. */
-  historySample?: Record<string, unknown> | null;
 }
 
-export function SlaMetrics({
-  metrics,
-  historyRecordCount,
-  historySample,
-}: SlaMetricsProps) {
+export function SlaMetrics({ metrics }: SlaMetricsProps) {
   if (!metrics) {
     return (
       <div className="rounded-lg border border-gray-200 bg-white p-6">
@@ -33,12 +25,6 @@ export function SlaMetrics({
 
   return (
     <div className="rounded-lg border border-gray-200 bg-white p-6">
-      <div className="mb-4 text-sm text-gray-600">
-        Debug: Fetched {historyRecordCount ?? 0} history records for these deals.
-      </div>
-      <div className="mb-4 break-words text-xs text-gray-500">
-        JSON: {JSON.stringify(historySample ?? {})}
-      </div>
       <div className="grid gap-6 sm:grid-cols-3">
         {items.map((m) => (
           <div key={m.title} className="flex flex-col">
@@ -59,4 +45,3 @@ export function SlaMetrics({
     </div>
   );
 }
-
