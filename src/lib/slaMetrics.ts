@@ -14,11 +14,25 @@ export interface SlaSummary {
   priceSharing: SlaMetric;
 }
 
+/** Safely parse a date string to milliseconds; returns NaN if invalid. */
+function parseTime(dateString: string | undefined | null): number {
+  if (dateString == null || typeof dateString !== "string") return NaN;
+  const t = new Date(dateString).getTime();
+  return Number.isFinite(t) ? t : NaN;
+}
+
 function diffHours(startIso: string, endIso: string): number {
-  const start = new Date(startIso).getTime();
-  const end = new Date(endIso).getTime();
+  const start = parseTime(startIso);
+  const end = parseTime(endIso);
   if (!Number.isFinite(start) || !Number.isFinite(end)) return NaN;
   return (end - start) / (1000 * 60 * 60);
+}
+
+/** Get deal ID from a history record (Bitrix may use OWNER_ID or ENTITY_ID). */
+function getDealIdFromHistory(h: StageHistoryItem): string {
+  const raw = h.OWNER_ID ?? (h as Record<string, unknown>).ENTITY_ID;
+  if (raw == null) return "";
+  return String(raw);
 }
 
 function buildHistoryByDeal(
@@ -27,21 +41,26 @@ function buildHistoryByDeal(
   const safeHistories = Array.isArray(histories) ? histories : [];
   const byId: Record<string, StageHistoryItem[]> = {};
   for (const h of safeHistories) {
-    const id = String(h.OWNER_ID);
+    const id = getDealIdFromHistory(h);
+    if (!id) continue;
     if (!byId[id]) byId[id] = [];
     byId[id].push(h);
   }
   for (const id of Object.keys(byId)) {
-    byId[id].sort(
-      (a, b) =>
-        new Date(a.CREATED_TIME).getTime() -
-        new Date(b.CREATED_TIME).getTime()
-    );
+    byId[id].sort((a, b) => {
+      const ta = parseTime(getTimestampFromHistory(a));
+      const tb = parseTime(getTimestampFromHistory(b));
+      return ta - tb;
+    });
   }
   return byId;
 }
 
-const normalizeName = (s: string) => s.trim().toLowerCase();
+/** Get timestamp string from a history record (CREATED_TIME or DATE_CREATE). */
+function getTimestampFromHistory(h: StageHistoryItem): string {
+  const raw = h.CREATED_TIME ?? (h as Record<string, unknown>).DATE_CREATE;
+  return typeof raw === "string" ? raw : "";
+}
 
 /**
  * Get the human-readable stage name for a history record using the pipeline map.
@@ -56,14 +75,16 @@ function getStageNameFromHistory(
   return stageIdToName[id] ?? id;
 }
 
-/** Check if a history record's stage (translated to name) matches the target name. */
+/** Check if a history record's stage (translated to name) includes the target phrase (flexible match). */
 function stageRecordMatchesName(
   h: StageHistoryItem,
   targetName: string,
   stageIdToName: Record<string, string>
 ): boolean {
   const name = getStageNameFromHistory(h, stageIdToName);
-  return normalizeName(name) === normalizeName(targetName);
+  const needle = (targetName ?? "").trim().toLowerCase();
+  const haystack = (name ?? "").toLowerCase();
+  return needle.length > 0 && haystack.includes(needle);
 }
 
 function makeMetric(
@@ -91,10 +112,15 @@ export function computeSlaMetrics(
   let firstOnTime = 0;
   let firstTotal = 0;
   for (const deal of safeDeals) {
-    const dealHistory = historyByDeal[deal.ID];
-    if (!dealHistory || dealHistory.length === 0 || !deal.DATE_CREATE) continue;
+    const dealId = deal?.ID != null ? String(deal.ID) : "";
+    if (!dealId) continue;
+    const dealHistory = historyByDeal[dealId];
+    if (!dealHistory || dealHistory.length === 0) continue;
+    const dateCreate = (deal as Record<string, unknown>).DATE_CREATE;
+    if (dateCreate == null || typeof dateCreate !== "string") continue;
     const firstTransition = dealHistory[0];
-    const hours = diffHours(deal.DATE_CREATE, firstTransition.CREATED_TIME);
+    const firstTime = getTimestampFromHistory(firstTransition);
+    const hours = diffHours(dateCreate, firstTime);
     if (!Number.isFinite(hours)) continue;
     firstTotal += 1;
     if (hours < 1) firstOnTime += 1;
@@ -106,18 +132,20 @@ export function computeSlaMetrics(
   let followOnTime = 0;
   let followTotal = 0;
   for (const deal of safeDeals) {
-    const dealHistory = historyByDeal[deal.ID];
+    const dealId = deal?.ID != null ? String(deal.ID) : "";
+    if (!dealId) continue;
+    const dealHistory = historyByDeal[dealId];
     if (!dealHistory || dealHistory.length === 0) continue;
     const enterIndex = dealHistory.findIndex((h) =>
       stageRecordMatchesName(h, followUpTargetName, stageNameMap)
     );
     if (enterIndex === -1) continue;
-    const enterTime = dealHistory[enterIndex].CREATED_TIME;
+    const enterTime = getTimestampFromHistory(dealHistory[enterIndex]);
     const exitRecord = dealHistory
       .slice(enterIndex + 1)
       .find((h) => !stageRecordMatchesName(h, followUpTargetName, stageNameMap));
     if (!exitRecord) continue;
-    const hours = diffHours(enterTime, exitRecord.CREATED_TIME);
+    const hours = diffHours(enterTime, getTimestampFromHistory(exitRecord));
     if (!Number.isFinite(hours)) continue;
     followTotal += 1;
     if (hours < 24) followOnTime += 1;
@@ -129,18 +157,20 @@ export function computeSlaMetrics(
   let priceOnTime = 0;
   let priceTotal = 0;
   for (const deal of safeDeals) {
-    const dealHistory = historyByDeal[deal.ID];
+    const dealId = deal?.ID != null ? String(deal.ID) : "";
+    if (!dealId) continue;
+    const dealHistory = historyByDeal[dealId];
     if (!dealHistory || dealHistory.length === 0) continue;
     const enterIndex = dealHistory.findIndex((h) =>
       stageRecordMatchesName(h, priceTargetName, stageNameMap)
     );
     if (enterIndex === -1) continue;
-    const enterTime = dealHistory[enterIndex].CREATED_TIME;
+    const enterTime = getTimestampFromHistory(dealHistory[enterIndex]);
     const exitRecord = dealHistory
       .slice(enterIndex + 1)
       .find((h) => !stageRecordMatchesName(h, priceTargetName, stageNameMap));
     if (!exitRecord) continue;
-    const hours = diffHours(enterTime, exitRecord.CREATED_TIME);
+    const hours = diffHours(enterTime, getTimestampFromHistory(exitRecord));
     if (!Number.isFinite(hours)) continue;
     priceTotal += 1;
     if (hours < 24) priceOnTime += 1;

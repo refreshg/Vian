@@ -85,6 +85,8 @@ export async function GET(request: NextRequest) {
       countryIdToName,
       slaMetrics,
       stageHistoryCount: safeStageHistories.length,
+      stageHistorySample:
+        safeStageHistories.length > 0 ? safeStageHistories[0] : null,
     });
   } catch (err) {
     const message = err instanceof Error ? err.message : "Failed to fetch deals";
