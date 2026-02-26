@@ -4,7 +4,9 @@ import {
   fetchStageNameMap,
   fetchSourceNameMap,
   fetchDealFieldOptions,
+  fetchStageHistoryForDeals,
 } from "@/lib/bitrix";
+import { computeSlaMetrics } from "@/lib/slaMetrics";
 
 const DEPARTMENT_FIELD_ID = "UF_CRM_1758023694929";
 const REJECTION_REASONS_FIELD_ID = "UF_CRM_1753862633986";
@@ -24,23 +26,31 @@ export async function GET(request: NextRequest) {
   }
 
   try {
+    const deals = await fetchAllDealsInRange({ startDate, endDate });
+
     const [
-      deals,
       stageResult,
       sourceIdToName,
       departmentIdToName,
       rejectionReasonIdToName,
       commentListIdToName,
       countryIdToName,
+      stageHistories,
     ] = await Promise.all([
-      fetchAllDealsInRange({ startDate, endDate }),
       fetchStageNameMap(),
       fetchSourceNameMap(),
       fetchDealFieldOptions(DEPARTMENT_FIELD_ID),
       fetchDealFieldOptions(REJECTION_REASONS_FIELD_ID),
       fetchDealFieldOptions(COMMENT_LIST_FIELD_ID),
       fetchDealFieldOptions(COUNTRY_FIELD_ID),
+      fetchStageHistoryForDeals(deals.map((d) => d.ID)),
     ]);
+
+    const slaMetrics = computeSlaMetrics(
+      deals,
+      stageHistories,
+      stageResult.nameMap
+    );
     return NextResponse.json({
       result: deals,
       total: deals.length,
@@ -51,6 +61,7 @@ export async function GET(request: NextRequest) {
       rejectionReasonIdToName,
       commentListIdToName,
       countryIdToName,
+      slaMetrics,
     });
   } catch (err) {
     const message = err instanceof Error ? err.message : "Failed to fetch deals";

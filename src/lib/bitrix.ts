@@ -175,6 +175,74 @@ export async function fetchDealFieldOptions(
   return map;
 }
 
+/** Single history record from crm.stagehistory.list for deals (entityTypeId: 2). */
+export interface StageHistoryItem {
+  ID: string;
+  OWNER_ID: string | number;
+  STAGE_ID: string;
+  CREATED_TIME: string;
+  [key: string]: unknown;
+}
+
+/**
+ * Fetches stage history for the given deal IDs using crm.stagehistory.list.
+ * Only histories for the provided OWNER_IDs are returned.
+ */
+export async function fetchStageHistoryForDeals(
+  dealIds: string[]
+): Promise<StageHistoryItem[]> {
+  if (dealIds.length === 0) return [];
+
+  const baseUrl = getWebhookUrl();
+  const endpoint = `${baseUrl}/crm.stagehistory.list`;
+  const all: StageHistoryItem[] = [];
+  const chunkSize = 20;
+
+  for (let i = 0; i < dealIds.length; i += chunkSize) {
+    const idsChunk = dealIds.slice(i, i + chunkSize);
+    let start = 0;
+
+    // Paginate through history for this chunk of deals.
+    // Bitrix24 uses "start"/"next" cursor-style pagination similar to crm.deal.list.
+    // eslint-disable-next-line no-constant-condition
+    while (true) {
+      const body: Record<string, unknown> = {
+        entityTypeId: 2,
+        filter: { OWNER_ID: idsChunk },
+        order: { OWNER_ID: "ASC", CREATED_TIME: "ASC" },
+        select: ["ID", "OWNER_ID", "STAGE_ID", "CREATED_TIME"],
+        start,
+      };
+
+      const response = await fetch(endpoint, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(body),
+      });
+
+      const data = await response.json();
+
+      if (!response.ok) {
+        throw new Error(
+          data.error_description || data.error || `HTTP ${response.status}`
+        );
+      }
+
+      if (data.error) {
+        throw new Error(data.error_description || data.error);
+      }
+
+      const items = (data.result ?? []) as StageHistoryItem[];
+      all.push(...items);
+
+      if (!data.next || items.length === 0) break;
+      start = data.next;
+    }
+  }
+
+  return all;
+}
+
 /**
  * Fetches deals from Bitrix24 using crm.deal.list with optional date filter.
  * Uses DATE_CREATE filter with >= and <= for the given range.

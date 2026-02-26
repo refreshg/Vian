@@ -9,7 +9,9 @@ import { RequestsBySourceChart } from "@/components/RequestsBySourceChart";
 import { RejectionReasonsTable } from "@/components/RejectionReasonsTable";
 import { CommentListTable } from "@/components/CommentListTable";
 import { CountryChart } from "@/components/CountryChart";
+import { SlaMetrics } from "@/components/SlaMetrics";
 import { computeDashboardData } from "@/lib/dashboardData";
+import type { SlaSummary } from "@/lib/slaMetrics";
 import type { BitrixDeal } from "@/types/bitrix";
 
 function formatDate(d: Date): string {
@@ -41,6 +43,7 @@ export default function DashboardPage() {
   const [countryIdToName, setCountryIdToName] = useState<
     Record<string, string>
   >({});
+  const [slaMetrics, setSlaMetrics] = useState<SlaSummary | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -60,6 +63,7 @@ export default function DashboardPage() {
       setCommentListIdToName(data.commentListIdToName ?? {});
       setSourceIdToName(data.sourceIdToName ?? {});
       setCountryIdToName(data.countryIdToName ?? {});
+      setSlaMetrics(data.slaMetrics ?? null);
     } catch (e) {
       setError(e instanceof Error ? e.message : "Something went wrong");
       setDeals([]);
@@ -70,6 +74,7 @@ export default function DashboardPage() {
       setCommentListIdToName({});
       setSourceIdToName({});
       setCountryIdToName({});
+      setSlaMetrics(null);
     } finally {
       setLoading(false);
     }
@@ -127,23 +132,28 @@ export default function DashboardPage() {
         )}
 
         {!loading && (
-          <div className="grid grid-cols-1 gap-6 lg:grid-cols-[5fr_7fr]">
-            {/* Left column */}
-            <div className="flex flex-col gap-6">
-              <RequestsByStageDonut stageGroups={dashboard.stageGroups} />
-              <RejectionReasonsTable rows={dashboard.rejectionReasons} />
-              <CommentListTable rows={dashboard.commentListRows} />
+          <>
+            <div className="mb-6">
+              <SlaMetrics metrics={slaMetrics} />
             </div>
-            {/* Right column */}
-            <div className="flex flex-col gap-6">
-              <KPIStatsRow kpi={dashboard.kpi} />
-              <RequestsByDepartmentsBar
-                departmentGroups={dashboard.departmentGroups}
-              />
-              <RequestsBySourceChart sourceGroups={dashboard.sourceGroups} />
-              <CountryChart countryGroups={dashboard.countryGroups} />
+            <div className="grid grid-cols-1 gap-6 lg:grid-cols-[5fr_7fr]">
+              {/* Left column */}
+              <div className="flex flex-col gap-6">
+                <RequestsByStageDonut stageGroups={dashboard.stageGroups} />
+                <RejectionReasonsTable rows={dashboard.rejectionReasons} />
+                <CommentListTable rows={dashboard.commentListRows} />
+              </div>
+              {/* Right column */}
+              <div className="flex flex-col gap-6">
+                <KPIStatsRow kpi={dashboard.kpi} />
+                <RequestsByDepartmentsBar
+                  departmentGroups={dashboard.departmentGroups}
+                />
+                <RequestsBySourceChart sourceGroups={dashboard.sourceGroups} />
+                <CountryChart countryGroups={dashboard.countryGroups} />
+              </div>
             </div>
-          </div>
+          </>
         )}
       </main>
     </div>
