@@ -24,8 +24,9 @@ function diffHours(startIso: string, endIso: string): number {
 function buildHistoryByDeal(
   histories: StageHistoryItem[]
 ): Record<string, StageHistoryItem[]> {
+  const safeHistories = Array.isArray(histories) ? histories : [];
   const byId: Record<string, StageHistoryItem[]> = {};
-  for (const h of histories) {
+  for (const h of safeHistories) {
     const id = String(h.OWNER_ID);
     if (!byId[id]) byId[id] = [];
     byId[id].push(h);
@@ -68,12 +69,14 @@ export function computeSlaMetrics(
   histories: StageHistoryItem[],
   stageIdToName?: Record<string, string>
 ): SlaSummary {
-  const historyByDeal = buildHistoryByDeal(histories);
+  const safeDeals = Array.isArray(deals) ? deals : [];
+  const safeHistories = Array.isArray(histories) ? histories : [];
+  const historyByDeal = buildHistoryByDeal(safeHistories);
 
   // 1. First Communication on Time (< 1 hour from DATE_CREATE to first stage change)
   let firstOnTime = 0;
   let firstTotal = 0;
-  for (const deal of deals) {
+  for (const deal of safeDeals) {
     const dealHistory = historyByDeal[deal.ID];
     if (!dealHistory || dealHistory.length === 0 || !deal.DATE_CREATE) continue;
     const firstChange = dealHistory[0];
@@ -91,7 +94,7 @@ export function computeSlaMetrics(
   let followOnTime = 0;
   let followTotal = 0;
   if (followUpStageId) {
-    for (const deal of deals) {
+    for (const deal of safeDeals) {
       const dealHistory = historyByDeal[deal.ID];
       if (!dealHistory || dealHistory.length === 0) continue;
       const enterIndex = dealHistory.findIndex(
@@ -118,7 +121,7 @@ export function computeSlaMetrics(
   let priceOnTime = 0;
   let priceTotal = 0;
   if (priceStageId) {
-    for (const deal of deals) {
+    for (const deal of safeDeals) {
       const dealHistory = historyByDeal[deal.ID];
       if (!dealHistory || dealHistory.length === 0) continue;
       const enterIndex = dealHistory.findIndex(

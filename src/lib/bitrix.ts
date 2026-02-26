@@ -191,15 +191,16 @@ export interface StageHistoryItem {
 export async function fetchStageHistoryForDeals(
   dealIds: string[]
 ): Promise<StageHistoryItem[]> {
-  if (dealIds.length === 0) return [];
+  const ids = Array.isArray(dealIds) ? dealIds : [];
+  if (ids.length === 0) return [];
 
   const baseUrl = getWebhookUrl();
   const endpoint = `${baseUrl}/crm.stagehistory.list`;
   const all: StageHistoryItem[] = [];
   const chunkSize = 20;
 
-  for (let i = 0; i < dealIds.length; i += chunkSize) {
-    const idsChunk = dealIds.slice(i, i + chunkSize);
+  for (let i = 0; i < ids.length; i += chunkSize) {
+    const idsChunk = ids.slice(i, i + chunkSize);
     let start = 0;
 
     // Paginate through history for this chunk of deals.
@@ -232,8 +233,13 @@ export async function fetchStageHistoryForDeals(
         throw new Error(data.error_description || data.error);
       }
 
-      const items = (data.result ?? []) as StageHistoryItem[];
-      all.push(...items);
+      const raw = data.result;
+      const items: StageHistoryItem[] = Array.isArray(raw)
+        ? raw
+        : raw && typeof raw === "object"
+          ? (Object.values(raw) as StageHistoryItem[])
+          : [];
+      all.push(...(Array.isArray(items) ? items : []));
 
       if (!data.next || items.length === 0) break;
       start = data.next;

@@ -26,7 +26,18 @@ export async function GET(request: NextRequest) {
   }
 
   try {
-    const deals = await fetchAllDealsInRange({ startDate, endDate });
+    const dealsRaw = await fetchAllDealsInRange({ startDate, endDate });
+    const deals = Array.isArray(dealsRaw) ? dealsRaw : [];
+
+    const dealIds = deals.map((d) => (d && typeof d === "object" && "ID" in d ? String(d.ID) : "")).filter(Boolean);
+
+    let stageHistories: Awaited<ReturnType<typeof fetchStageHistoryForDeals>> = [];
+    try {
+      stageHistories = await fetchStageHistoryForDeals(dealIds);
+    } catch {
+      stageHistories = [];
+    }
+    const safeStageHistories = Array.isArray(stageHistories) ? stageHistories : [];
 
     const [
       stageResult,
@@ -35,7 +46,6 @@ export async function GET(request: NextRequest) {
       rejectionReasonIdToName,
       commentListIdToName,
       countryIdToName,
-      stageHistories,
     ] = await Promise.all([
       fetchStageNameMap(),
       fetchSourceNameMap(),
@@ -43,14 +53,22 @@ export async function GET(request: NextRequest) {
       fetchDealFieldOptions(REJECTION_REASONS_FIELD_ID),
       fetchDealFieldOptions(COMMENT_LIST_FIELD_ID),
       fetchDealFieldOptions(COUNTRY_FIELD_ID),
-      fetchStageHistoryForDeals(deals.map((d) => d.ID)),
     ]);
 
-    const slaMetrics = computeSlaMetrics(
-      deals,
-      stageHistories,
-      stageResult.nameMap
-    );
+    let slaMetrics;
+    try {
+      slaMetrics = computeSlaMetrics(
+        deals,
+        safeStageHistories,
+        stageResult?.nameMap ?? {}
+      );
+    } catch {
+      slaMetrics = {
+        firstCommunication: { title: "First Communication on Time", onTimeCount: 0, totalCount: 0, rate: 0 },
+        followUp: { title: "Follow-up on Time", onTimeCount: 0, totalCount: 0, rate: 0 },
+        priceSharing: { title: "Price sharing to Patient on Time", onTimeCount: 0, totalCount: 0, rate: 0 },
+      };
+    }
     return NextResponse.json({
       result: deals,
       total: deals.length,
