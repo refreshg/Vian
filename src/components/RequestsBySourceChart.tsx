@@ -2,20 +2,17 @@
 
 import React from "react";
 import {
-  ComposedChart,
+  BarChart,
   Bar,
-  Line,
   XAxis,
   YAxis,
-  CartesianGrid,
   Tooltip,
-  Legend,
   ResponsiveContainer,
+  LabelList,
 } from "recharts";
 import type { SourceGroup } from "@/lib/dashboardData";
 
 const BAR_COLOR = "#93c5fd";
-const LINE_COLOR = "#86efac";
 
 interface RequestsBySourceChartProps {
   sourceGroups: SourceGroup[];
@@ -29,50 +26,27 @@ export function RequestsBySourceChart({
       <h2 className="border-b border-gray-200 pb-3 text-base font-medium text-gray-900">
         Requests by Source
       </h2>
-      <div className="h-72 w-full pt-4">
+      <div className="min-h-[400px] w-full pt-4">
         {sourceGroups.length === 0 ? (
-          <p className="flex h-full items-center justify-center text-sm text-gray-500">
+          <p className="flex min-h-[300px] items-center justify-center text-sm text-gray-500">
             No source data for the selected period
           </p>
         ) : (
-          <ResponsiveContainer width="100%" height="100%">
-            <ComposedChart
+          <ResponsiveContainer width="100%" height={400}>
+            <BarChart
+              layout="vertical"
               data={sourceGroups}
-              margin={{ top: 24, right: 32, left: 0, bottom: 0 }}
+              margin={{ top: 20, right: 100, left: 0, bottom: 20 }}
             >
-              <CartesianGrid strokeDasharray="3 3" stroke="#e5e7eb" />
-              <XAxis
+              <XAxis type="number" hide />
+              <YAxis
+                type="category"
                 dataKey="name"
+                width={280}
                 tick={{ fontSize: 11 }}
+                interval={0}
                 stroke="#9ca3af"
                 tickLine={false}
-              />
-              <YAxis
-                yAxisId="left"
-                tick={{ fontSize: 12 }}
-                stroke="#9ca3af"
-                tickLine={false}
-                allowDecimals={false}
-                label={{
-                  value: "Requests",
-                  angle: -90,
-                  position: "insideLeft",
-                  style: { fontSize: 11, fill: "#6b7280" },
-                }}
-              />
-              <YAxis
-                yAxisId="right"
-                orientation="right"
-                tick={{ fontSize: 12 }}
-                stroke="#9ca3af"
-                tickLine={false}
-                tickFormatter={(v) => `${v}%`}
-                label={{
-                  value: "Source Rate",
-                  angle: 90,
-                  position: "insideRight",
-                  style: { fontSize: 11, fill: "#6b7280" },
-                }}
               />
               <Tooltip
                 contentStyle={{
@@ -80,48 +54,56 @@ export function RequestsBySourceChart({
                   borderRadius: "6px",
                   backgroundColor: "#fff",
                 }}
-                formatter={(value: number, name: string) => {
-                  if (name === "Requests") return [value, "Requests"];
-                  return [`${Number(value).toFixed(1)}%`, "Source Rate"];
+                formatter={(value: number) => [value, "Requests"]}
+                labelFormatter={(label, payload) => {
+                  if (payload?.[0]?.payload) {
+                    const row = payload[0].payload as SourceGroup;
+                    return `${label} — ${row.count} (${row.sourceRate.toFixed(1)}%)`;
+                  }
+                  return label;
                 }}
               />
-              <Legend
-                align="left"
-                verticalAlign="top"
-                wrapperStyle={{ paddingBottom: 8 }}
-                formatter={(value) => (
-                  <span className="text-sm text-gray-600">{value}</span>
-                )}
-              />
               <Bar
-                yAxisId="left"
                 dataKey="count"
                 name="Requests"
                 fill={BAR_COLOR}
-                radius={[4, 4, 0, 0]}
-                label={{
-                  position: "top",
-                  fill: "#374151",
-                  fontSize: 11,
-                  formatter: (v: number) => String(v),
-                }}
-              />
-              <Line
-                yAxisId="right"
-                type="monotone"
-                dataKey="sourceRate"
-                name="Source Rate"
-                stroke={LINE_COLOR}
-                strokeWidth={2}
-                dot={{ fill: LINE_COLOR, r: 4 }}
-                label={{
-                  position: "top",
-                  fill: "#374151",
-                  fontSize: 10,
-                  formatter: (v: number) => `${Number(v).toFixed(1)}%`,
-                }}
-              />
-            </ComposedChart>
+                radius={[0, 4, 4, 0]}
+                barSize={24}
+              >
+                <LabelList
+                  dataKey="count"
+                  content={(props: {
+                    x?: number;
+                    y?: number;
+                    width?: number;
+                    height?: number;
+                    value?: number;
+                    payload?: SourceGroup;
+                  }) => {
+                    const { x, y, width, height, value, payload } = props;
+                    const xPos = Number(x) + Number(width) + 8;
+                    const yPos = Number(y) + Number(height) / 2;
+                    const rateStr =
+                      payload?.sourceRate !== undefined
+                        ? ` (${payload.sourceRate.toFixed(1)}%)`
+                        : "";
+                    return (
+                      <text
+                        x={xPos}
+                        y={yPos}
+                        fill="#4b5563"
+                        fontSize={12}
+                        textAnchor="start"
+                        dominantBaseline="middle"
+                      >
+                        {value}
+                        {rateStr}
+                      </text>
+                    );
+                  }}
+                />
+              </Bar>
+            </BarChart>
           </ResponsiveContainer>
         )}
       </div>

@@ -74,6 +74,7 @@ export function computeDashboardData(
   stageIdToName?: Record<string, string>,
   departmentIdToName?: Record<string, string>,
   rejectionReasonIdToName?: Record<string, string>,
+  rejectionReasonFieldId?: string,
   commentListIdToName?: Record<string, string>,
   sourceIdToName?: Record<string, string>,
   countryIdToName?: Record<string, string>,
@@ -136,10 +137,13 @@ export function computeDashboardData(
     .map(([name, count]) => ({ name, count }))
     .sort((a, b) => b.count - a.count);
 
-  // Rejection reasons = deals with UF_CRM_1753862633986 set, grouped by mapped string value
+  // Rejection reasons = deals with rejection field set, grouped by mapped string value
+  // Pipeline 1 uses UF_CRM_1753862633986, Pipeline 3 uses UF_CRM_1753861857976
+  const rejectionFieldKey =
+    rejectionReasonFieldId ?? "UF_CRM_1753862633986";
   const reasonMap = new Map<string, number>();
   for (const d of deals) {
-    const raw = d.UF_CRM_1753862633986;
+    const raw = (d as Record<string, unknown>)[rejectionFieldKey];
     if (raw == null || raw === "") continue;
     const id = String(raw);
     const name = rejectionReasonIdToName?.[id] ?? id;

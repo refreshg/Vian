@@ -9,7 +9,10 @@ import {
 import { computeSlaMetrics, type PriceSharingDebugRow } from "@/lib/slaMetrics";
 
 const DEPARTMENT_FIELD_ID = "UF_CRM_1758023694929";
+/** Rejection reasons field for Pipeline 1 (Caucasus Medical Centre) */
 const REJECTION_REASONS_FIELD_ID = "UF_CRM_1753862633986";
+/** Rejection reasons field for Pipeline 3 (Iv.Bokeria University Hospital) */
+const REJECTION_REASONS_FIELD_ID_PIPELINE_3 = "UF_CRM_1753861857976";
 const COMMENT_LIST_FIELD_ID = "UF_CRM_1768995573895";
 const COUNTRY_FIELD_ID = "UF_CRM_1769688668259";
 
@@ -52,6 +55,11 @@ export async function GET(request: NextRequest) {
     }
     const safeStageHistories = Array.isArray(stageHistories) ? stageHistories : [];
 
+    const rejectionReasonsFieldId =
+      category === "3"
+        ? REJECTION_REASONS_FIELD_ID_PIPELINE_3
+        : REJECTION_REASONS_FIELD_ID;
+
     const [
       stageResult,
       sourceIdToName,
@@ -63,7 +71,7 @@ export async function GET(request: NextRequest) {
       fetchStageNameMap(category),
       fetchSourceNameMap(),
       fetchDealFieldOptions(DEPARTMENT_FIELD_ID),
-      fetchDealFieldOptions(REJECTION_REASONS_FIELD_ID),
+      fetchDealFieldOptions(rejectionReasonsFieldId),
       fetchDealFieldOptions(COMMENT_LIST_FIELD_ID),
       fetchDealFieldOptions(COUNTRY_FIELD_ID),
     ]);
@@ -92,6 +100,7 @@ export async function GET(request: NextRequest) {
       sourceIdToName,
       departmentIdToName,
       rejectionReasonIdToName,
+      rejectionReasonFieldId: rejectionReasonsFieldId,
       commentListIdToName,
       countryIdToName,
       slaMetrics,

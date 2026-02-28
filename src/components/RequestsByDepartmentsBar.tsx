@@ -33,11 +33,16 @@ export function RequestsByDepartmentsBar({
           <ResponsiveContainer width="100%" height="100%">
             <BarChart
               data={departmentGroups}
-              margin={{ top: 8, right: 8, left: 0, bottom: 0 }}
+              margin={{ top: 35, right: 20, left: 0, bottom: 140 }}
+              barCategoryGap="12%"
             >
               <XAxis
                 dataKey="name"
-                tick={{ fontSize: 11 }}
+                angle={-45}
+                textAnchor="end"
+                interval={0}
+                minTickGap={10}
+                tick={{ fontSize: 11, fill: "#666" }}
                 stroke="#9ca3af"
                 tickLine={false}
               />

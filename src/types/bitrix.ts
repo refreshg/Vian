@@ -10,8 +10,10 @@ export interface BitrixDeal {
   SOURCE_ID?: string;
   /** Custom dropdown: department (ID UF_CRM_1758023694929) */
   UF_CRM_1758023694929?: string | number;
-  /** Rejection Reasons dropdown – UF_CRM_1753862633986 */
+  /** Rejection Reasons dropdown – UF_CRM_1753862633986 (Pipeline 1) */
   UF_CRM_1753862633986?: string | number;
+  /** Rejection Reasons dropdown – UF_CRM_1753861857976 (Pipeline 3 / Iv.Bokeria) */
+  UF_CRM_1753861857976?: string | number;
   /** Comment (list) dropdown – UF_CRM_1768995573895 */
   UF_CRM_1768995573895?: string | number;
   /** Country dropdown – UF_CRM_1769688668259 */
