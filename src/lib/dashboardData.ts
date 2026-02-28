@@ -143,7 +143,7 @@ export function computeDashboardData(
     rejectionReasonFieldId ?? "UF_CRM_1753862633986";
   const reasonMap = new Map<string, number>();
   for (const d of deals) {
-    const raw = (d as Record<string, unknown>)[rejectionFieldKey];
+    const raw = (d as any)[rejectionFieldKey];
     if (raw == null || raw === "") continue;
     const id = String(raw);
     const name = rejectionReasonIdToName?.[id] ?? id;
