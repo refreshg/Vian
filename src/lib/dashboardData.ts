@@ -106,24 +106,28 @@ export function computeDashboardData(
     const id = d.STAGE_ID ?? "Unknown";
     stageMap.set(id, (stageMap.get(id) ?? 0) + 1);
   }
+  /** Stage names to exclude from the chart (e.g. not a real stage for this pipeline). */
+  const EXCLUDED_STAGE_NAMES = new Set(["Patient Response"]);
+
   const stageGroups: StageGroup[] = (allStageIdsInOrder && allStageIdsInOrder.length > 0
     ? allStageIdsInOrder
     : Array.from(stageMap.keys())
-  ).map((stageId) => ({
-    stageId,
-    name: stageIdToName?.[stageId] ?? stageLabel(stageId),
-    value: stageMap.get(stageId) ?? 0,
-  }));
+  )
+    .map((stageId) => ({
+      stageId,
+      name: stageIdToName?.[stageId] ?? stageLabel(stageId),
+      value: stageMap.get(stageId) ?? 0,
+    }))
+    .filter((s) => !EXCLUDED_STAGE_NAMES.has(s.name));
   // Append any stages that appear in deals but not in pipeline list (e.g. unknown/legacy)
   if (allStageIdsInOrder && allStageIdsInOrder.length > 0) {
     const pipelineSet = new Set(allStageIdsInOrder);
     Array.from(stageMap.entries()).forEach(([stageId, value]) => {
       if (!pipelineSet.has(stageId) && value > 0) {
-        stageGroups.push({
-          stageId,
-          name: stageIdToName?.[stageId] ?? stageLabel(stageId),
-          value,
-        });
+        const name = stageIdToName?.[stageId] ?? stageLabel(stageId);
+        if (!EXCLUDED_STAGE_NAMES.has(name)) {
+          stageGroups.push({ stageId, name, value });
+        }
       }
     });
   }
