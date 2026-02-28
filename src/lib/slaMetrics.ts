@@ -25,6 +25,36 @@ export interface PriceSharingDebugRow {
 const ONE_HOUR_MS = 3600000;
 const TWENTY_FOUR_HOURS_MS = 86400000;
 
+/** Business hours: Monday–Friday 09:00–18:00. Returns elapsed business hours between startMs and endMs. */
+function businessHoursBetween(startMs: number, endMs: number): number {
+  if (endMs <= startMs) return 0;
+  const MS_PER_HOUR = 3600000;
+  const START_HOUR = 9;
+  const END_HOUR = 18;
+  let totalMs = 0;
+  let current = new Date(startMs);
+  const end = new Date(endMs);
+  while (current < end) {
+    const day = current.getDay();
+    if (day >= 1 && day <= 5) {
+      const dayStart = new Date(current);
+      dayStart.setHours(START_HOUR, 0, 0, 0);
+      const dayEnd = new Date(current);
+      dayEnd.setHours(END_HOUR, 0, 0, 0);
+      const segmentStart =
+        current.getTime() < dayStart.getTime() ? dayStart : current;
+      const segmentEnd =
+        end.getTime() < dayEnd.getTime() ? end : dayEnd;
+      if (segmentEnd.getTime() > segmentStart.getTime()) {
+        totalMs += segmentEnd.getTime() - segmentStart.getTime();
+      }
+    }
+    current.setDate(current.getDate() + 1);
+    current.setHours(0, 0, 0, 0);
+  }
+  return totalMs / MS_PER_HOUR;
+}
+
 /** Stage name phrases for multi-pipeline SLA (stage IDs differ per pipeline, e.g. C1:NEW vs C2:NEW). */
 const PHRASE_INITIAL = "Coordinator did not start";
 const PHRASE_FOLLOW_UP = "Follow up in 24 Hours";
@@ -125,9 +155,18 @@ export function computeSlaMetrics(
   const isFollowUpStage = (sid: string) => followUpStageIds.has(sid);
   const isPriceSharingStage = (sid: string) => priceSharingStageIds.has(sid);
 
-  // —— A. First Communication (< 1 hour from DATE_CREATE to first non-initial move) ——
+  // —— A. First Communication (< 1 business hour from DATE_CREATE to first non-initial move) ——
+  // Business hours: Mon–Fri 09:00–18:00. E.g. lead at 17:30 → on time if contacted by 09:30 next working day.
+  const FIRST_COMMUNICATION_LIMIT_HOURS = 1;
   let firstOnTime = 0;
   let firstTotal = 0;
+  const firstCommDebug: Array<{
+    Deal_ID: string;
+    Created_At: string;
+    First_Comm_At: string;
+    Calculated_Hours: number;
+    Is_On_Time: boolean;
+  }> = [];
   for (const deal of safeDeals) {
     const dealId = deal?.ID != null ? String(deal.ID) : "";
     if (!dealId) continue;
@@ -144,9 +183,20 @@ export function computeSlaMetrics(
     );
     const eventMs = parseTimeMs(firstNonInitial.CREATED_TIME);
     if (!Number.isFinite(createMs) || !Number.isFinite(eventMs)) continue;
-    const diffMs = eventMs - createMs;
-    if (diffMs <= ONE_HOUR_MS) firstOnTime += 1;
+    const elapsedBusinessHours = businessHoursBetween(createMs, eventMs);
+    const isOnTime = elapsedBusinessHours <= FIRST_COMMUNICATION_LIMIT_HOURS;
+    if (firstCommDebug.length < 5) {
+      firstCommDebug.push({
+        Deal_ID: dealId,
+        Created_At: typeof dateCreate === "string" ? dateCreate : String(dateCreate ?? ""),
+        First_Comm_At: String(firstNonInitial.CREATED_TIME ?? ""),
+        Calculated_Hours: Math.round(elapsedBusinessHours * 100) / 100,
+        Is_On_Time: isOnTime,
+      });
+    }
+    if (isOnTime) firstOnTime += 1;
   }
+  console.log("🔍 FIRST COMM VERIFICATION:", firstCommDebug);
 
   // —— B. Follow-up (< 24 hours from entry into "Follow up in 24 Hours" to next event or now) ——
   let followOnTime = 0;
