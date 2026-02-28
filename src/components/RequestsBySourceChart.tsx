@@ -72,20 +72,13 @@ export function RequestsBySourceChart({
               >
                 <LabelList
                   dataKey="count"
-                  content={(props: {
-                    x?: number;
-                    y?: number;
-                    width?: number;
-                    height?: number;
-                    value?: number;
-                    payload?: SourceGroup;
-                  }) => {
+                  content={(props: any) => {
                     const { x, y, width, height, value, payload } = props;
-                    const xPos = Number(x) + Number(width) + 8;
-                    const yPos = Number(y) + Number(height) / 2;
+                    const xPos = (Number(x) || 0) + (Number(width) || 0) + 8;
+                    const yPos = (Number(y) || 0) + (Number(height) || 0) / 2;
                     const rateStr =
                       payload?.sourceRate !== undefined
-                        ? ` (${payload.sourceRate.toFixed(1)}%)`
+                        ? ` (${Number(payload.sourceRate).toFixed(1)}%)`
                         : "";
                     return (
                       <text

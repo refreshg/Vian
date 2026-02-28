@@ -175,6 +175,13 @@ export function computeSlaMetrics(
   // —— C. Price Sharing (< 24 hours from entry into "Offer Finalization for Patient" to next event or now) ——
   let priceOnTime = 0;
   let priceTotal = 0;
+  const priceSharingDebug: Array<{
+    Deal_ID: string;
+    Entered_Stage_At: string;
+    Exited_Stage_At: string;
+    Calculated_Hours: number;
+    Is_On_Time: boolean;
+  }> = [];
   for (const deal of safeDeals) {
     const dealId = deal?.ID != null ? String(deal.ID) : "";
     if (!dealId) continue;
@@ -195,19 +202,30 @@ export function computeSlaMetrics(
     const diffMs = endMsSafe - entryMs;
     const diffHours = diffMs / (1000 * 60 * 60);
     const isOnTime = diffMs <= TWENTY_FOUR_HOURS_MS;
+    const enteredAt = String(events[entryIndex].CREATED_TIME ?? "");
+    const exitedAt = nextEvent
+      ? String(nextEvent.CREATED_TIME ?? "")
+      : "Still in stage";
+    priceSharingDebug.push({
+      Deal_ID: dealId,
+      Entered_Stage_At: enteredAt,
+      Exited_Stage_At: exitedAt,
+      Calculated_Hours: Math.round(diffHours * 100) / 100,
+      Is_On_Time: isOnTime,
+    });
     if (options?.priceSharingDebugOut) {
       options.priceSharingDebugOut.push({
         dealId,
-        entryTime: String(events[entryIndex].CREATED_TIME ?? ""),
-        exitTime: nextEvent
-          ? String(nextEvent.CREATED_TIME ?? "")
-          : new Date(endMsSafe).toISOString(),
+        entryTime: enteredAt,
+        exitTime: nextEvent ? exitedAt : new Date(endMsSafe).toISOString(),
         diffHours,
         isOnTime,
       });
     }
     if (isOnTime) priceOnTime += 1;
   }
+
+  console.log("🔍 PRICE SHARING VERIFICATION:", priceSharingDebug);
 
   if (
     options?.priceSharingDebugOut &&
