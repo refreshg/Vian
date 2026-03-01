@@ -82,7 +82,7 @@ export default function DashboardPage() {
       setCountryIdToName(data.countryIdToName ?? {});
       setSlaMetrics(data.slaMetrics ?? null);
       if (Array.isArray(data.firstCommDebug)) {
-        console.log("🚨 FIRST COMM DEBUG:", data.firstCommDebug);
+        console.log("🚨 FIRST COMM VERIFICATION (24/7):", data.firstCommDebug);
       }
     } catch (e) {
       setError(e instanceof Error ? e.message : "Something went wrong");

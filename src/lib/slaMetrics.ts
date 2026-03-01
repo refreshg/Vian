@@ -25,34 +25,11 @@ export interface PriceSharingDebugRow {
 const ONE_HOUR_MS = 3600000;
 const TWENTY_FOUR_HOURS_MS = 86400000;
 
-/** Business hours: Monday–Friday 09:00–18:00. Returns elapsed business hours between startMs and endMs. */
-function businessHoursBetween(startMs: number, endMs: number): number {
-  if (endMs <= startMs) return 0;
-  const MS_PER_HOUR = 3600000;
-  const START_HOUR = 9;
-  const END_HOUR = 18;
-  let totalMs = 0;
-  let current = new Date(startMs);
-  const end = new Date(endMs);
-  while (current < end) {
-    const day = current.getDay();
-    if (day >= 1 && day <= 5) {
-      const dayStart = new Date(current);
-      dayStart.setHours(START_HOUR, 0, 0, 0);
-      const dayEnd = new Date(current);
-      dayEnd.setHours(END_HOUR, 0, 0, 0);
-      const segmentStart =
-        current.getTime() < dayStart.getTime() ? dayStart : current;
-      const segmentEnd =
-        end.getTime() < dayEnd.getTime() ? end : dayEnd;
-      if (segmentEnd.getTime() > segmentStart.getTime()) {
-        totalMs += segmentEnd.getTime() - segmentStart.getTime();
-      }
-    }
-    current.setDate(current.getDate() + 1);
-    current.setHours(0, 0, 0, 0);
-  }
-  return totalMs / MS_PER_HOUR;
+/** Raw 24/7 calendar hours between two timestamps (no business-hours logic). */
+function calendarHoursBetween(startMs: number, endMs: number): number {
+  if (!Number.isFinite(startMs) || !Number.isFinite(endMs) || endMs <= startMs)
+    return 0;
+  return (endMs - startMs) / ONE_HOUR_MS;
 }
 
 /** Stage name phrases for multi-pipeline SLA (stage IDs differ per pipeline, e.g. C1:NEW vs C2:NEW). */
@@ -144,6 +121,7 @@ export function computeSlaMetrics(
     firstCommDebugOut?: any[];
   }
 ): SlaSummary {
+  console.log("🚀 SLA Metrics calculation started...");
   const safeDeals = Array.isArray(deals) ? deals : [];
   const historyMap = buildHistoryMap(histories);
 
@@ -158,19 +136,12 @@ export function computeSlaMetrics(
   const isFollowUpStage = (sid: string) => followUpStageIds.has(sid);
   const isPriceSharingStage = (sid: string) => priceSharingStageIds.has(sid);
 
-  // —— A. First Communication (< 1 business hour from DATE_CREATE to first move out of initial stage) ——
-  // First transition to ANY stage strictly different from initial. Ignore the creation-moment assignment (event time must be > createMs).
+  // —— A. First Communication (<= 1 calendar hour from DATE_CREATE to first move out of initial stage) ——
+  // First transition to ANY stage strictly different from initial. Ignore creation-moment assignment (event time must be > createMs).
   const FIRST_COMMUNICATION_LIMIT_HOURS = 1;
   let firstOnTime = 0;
   let firstTotal = 0;
-  const firstCommDebug: Array<{
-    Deal_ID: string;
-    Created_At: string;
-    Trigger_Stage: string;
-    First_Comm_At: string;
-    Calculated_Hours: number;
-    Is_On_Time: boolean;
-  }> = [];
+  const firstCommDebug: any[] = [];
   const nowMs = Date.now();
   for (const deal of safeDeals) {
     const dealId = deal?.ID != null ? String(deal.ID) : "";
@@ -199,24 +170,18 @@ export function computeSlaMetrics(
         break;
       }
     }
-    let diffHours: number;
-    let isOnTime: boolean;
+    const endMs = firstCommEnteredAt
+      ? parseTimeMs(firstCommEnteredAt)
+      : nowMs;
+    const endMsSafe = Number.isFinite(endMs) ? endMs : nowMs;
+    const diffHours = calendarHoursBetween(createMs, endMsSafe);
+    const isOnTime = diffHours <= FIRST_COMMUNICATION_LIMIT_HOURS;
+    firstTotal += 1;
+    if (isOnTime) firstOnTime += 1;
     const triggerStageLabel =
       triggerStageId != null
         ? (stageIdToName[triggerStageId] ?? triggerStageId)
         : "PENDING";
-    if (firstCommEnteredAt) {
-      const eventMs = parseTimeMs(firstCommEnteredAt);
-      diffHours = Number.isFinite(eventMs)
-        ? businessHoursBetween(createMs, eventMs)
-        : businessHoursBetween(createMs, nowMs);
-      isOnTime = diffHours <= FIRST_COMMUNICATION_LIMIT_HOURS;
-    } else {
-      diffHours = businessHoursBetween(createMs, nowMs);
-      isOnTime = diffHours <= FIRST_COMMUNICATION_LIMIT_HOURS;
-    }
-    firstTotal += 1;
-    if (isOnTime) firstOnTime += 1;
     firstCommDebug.push({
       Deal_ID: dealId,
       Created_At: typeof dateCreate === "string" ? dateCreate : String(dateCreate ?? ""),
@@ -225,10 +190,6 @@ export function computeSlaMetrics(
       Calculated_Hours: Math.round(diffHours * 100) / 100,
       Is_On_Time: isOnTime,
     });
-  }
-  console.log("🚨 FIRST COMM DEBUG:", firstCommDebug);
-  if (options?.firstCommDebugOut) {
-    options.firstCommDebugOut.push(...firstCommDebug);
   }
 
   // —— B. Follow-up (< 24 hours from entry into "Follow up in 24 Hours" to next event or now) ——
@@ -306,6 +267,11 @@ export function computeSlaMetrics(
       });
     }
     if (isOnTime) priceOnTime += 1;
+  }
+
+  console.log("🚨 FIRST COMM VERIFICATION (24/7):", firstCommDebug);
+  if (options?.firstCommDebugOut) {
+    options.firstCommDebugOut.push(...firstCommDebug);
   }
 
   return {
