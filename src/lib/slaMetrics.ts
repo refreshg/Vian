@@ -139,7 +139,10 @@ export function computeSlaMetrics(
   deals: BitrixDeal[],
   histories: StageHistoryItem[],
   stageIdToName: Record<string, string> = {},
-  options?: { priceSharingDebugOut?: PriceSharingDebugRow[] }
+  options?: {
+    priceSharingDebugOut?: PriceSharingDebugRow[];
+    firstCommDebugOut?: any[];
+  }
 ): SlaSummary {
   const safeDeals = Array.isArray(deals) ? deals : [];
   const historyMap = buildHistoryMap(histories);
@@ -155,48 +158,78 @@ export function computeSlaMetrics(
   const isFollowUpStage = (sid: string) => followUpStageIds.has(sid);
   const isPriceSharingStage = (sid: string) => priceSharingStageIds.has(sid);
 
-  // —— A. First Communication (< 1 business hour from DATE_CREATE to first non-initial move) ——
-  // Business hours: Mon–Fri 09:00–18:00. E.g. lead at 17:30 → on time if contacted by 09:30 next working day.
+  // —— A. First Communication (< 1 business hour from DATE_CREATE to first move out of initial stage) ——
+  // First transition to ANY stage strictly different from initial. Ignore the creation-moment assignment (event time must be > createMs).
   const FIRST_COMMUNICATION_LIMIT_HOURS = 1;
   let firstOnTime = 0;
   let firstTotal = 0;
   const firstCommDebug: Array<{
     Deal_ID: string;
     Created_At: string;
+    Trigger_Stage: string;
     First_Comm_At: string;
     Calculated_Hours: number;
     Is_On_Time: boolean;
   }> = [];
+  const nowMs = Date.now();
   for (const deal of safeDeals) {
     const dealId = deal?.ID != null ? String(deal.ID) : "";
     if (!dealId) continue;
-    const events = historyMap[dealId];
-    if (!events?.length) continue;
-    const firstNonInitial = events.find(
-      (e) => !isInitialStage(stageId(e.STAGE_ID))
-    );
-    if (!firstNonInitial) continue;
-    firstTotal += 1;
     const dateCreate = deal?.DATE_CREATE;
     const createMs = parseTimeMs(
       typeof dateCreate === "string" ? dateCreate : undefined
     );
-    const eventMs = parseTimeMs(firstNonInitial.CREATED_TIME);
-    if (!Number.isFinite(createMs) || !Number.isFinite(eventMs)) continue;
-    const elapsedBusinessHours = businessHoursBetween(createMs, eventMs);
-    const isOnTime = elapsedBusinessHours <= FIRST_COMMUNICATION_LIMIT_HOURS;
-    if (firstCommDebug.length < 5) {
-      firstCommDebug.push({
-        Deal_ID: dealId,
-        Created_At: typeof dateCreate === "string" ? dateCreate : String(dateCreate ?? ""),
-        First_Comm_At: String(firstNonInitial.CREATED_TIME ?? ""),
-        Calculated_Hours: Math.round(elapsedBusinessHours * 100) / 100,
-        Is_On_Time: isOnTime,
-      });
+    if (!Number.isFinite(createMs)) continue;
+    const events = historyMap[dealId] ?? [];
+    let firstCommEnteredAt: string | null = null;
+    let triggerStageId: string | null = null;
+    for (const e of events) {
+      const sid = stageId(e.STAGE_ID);
+      const eventMs = parseTimeMs(e.CREATED_TIME);
+      const t = e.CREATED_TIME;
+      if (
+        !isInitialStage(sid) &&
+        t != null &&
+        String(t).trim() !== "" &&
+        Number.isFinite(eventMs) &&
+        eventMs > createMs
+      ) {
+        firstCommEnteredAt = String(t).trim();
+        triggerStageId = sid;
+        break;
+      }
     }
+    let diffHours: number;
+    let isOnTime: boolean;
+    const triggerStageLabel =
+      triggerStageId != null
+        ? (stageIdToName[triggerStageId] ?? triggerStageId)
+        : "PENDING";
+    if (firstCommEnteredAt) {
+      const eventMs = parseTimeMs(firstCommEnteredAt);
+      diffHours = Number.isFinite(eventMs)
+        ? businessHoursBetween(createMs, eventMs)
+        : businessHoursBetween(createMs, nowMs);
+      isOnTime = diffHours <= FIRST_COMMUNICATION_LIMIT_HOURS;
+    } else {
+      diffHours = businessHoursBetween(createMs, nowMs);
+      isOnTime = diffHours <= FIRST_COMMUNICATION_LIMIT_HOURS;
+    }
+    firstTotal += 1;
     if (isOnTime) firstOnTime += 1;
+    firstCommDebug.push({
+      Deal_ID: dealId,
+      Created_At: typeof dateCreate === "string" ? dateCreate : String(dateCreate ?? ""),
+      Trigger_Stage: triggerStageLabel,
+      First_Comm_At: firstCommEnteredAt ?? "PENDING",
+      Calculated_Hours: Math.round(diffHours * 100) / 100,
+      Is_On_Time: isOnTime,
+    });
   }
-  console.log("🔍 FIRST COMM VERIFICATION:", firstCommDebug);
+  console.log("🚨 FIRST COMM DEBUG:", firstCommDebug);
+  if (options?.firstCommDebugOut) {
+    options.firstCommDebugOut.push(...firstCommDebug);
+  }
 
   // —— B. Follow-up (< 24 hours from entry into "Follow up in 24 Hours" to next event or now) ——
   let followOnTime = 0;
@@ -273,18 +306,6 @@ export function computeSlaMetrics(
       });
     }
     if (isOnTime) priceOnTime += 1;
-  }
-
-  console.log("🔍 PRICE SHARING VERIFICATION:", priceSharingDebug);
-
-  if (
-    options?.priceSharingDebugOut &&
-    process.env.NODE_ENV !== "production"
-  ) {
-    console.log(
-      "SLA Verification - Price Sharing:",
-      options.priceSharingDebugOut
-    );
   }
 
   return {
