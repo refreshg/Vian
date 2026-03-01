@@ -1,7 +1,9 @@
 "use client";
 
-import { useCallback, useState, useEffect } from "react";
+import { useCallback, useState, useEffect, useRef } from "react";
 import { DateRangePicker } from "@/components/DateRangePicker";
+import html2canvas from "html2canvas";
+import { jsPDF } from "jspdf";
 import { KPIStatsRow } from "@/components/KPIStatsRow";
 import { RequestsByStageDonut } from "@/components/RequestsByStageDonut";
 import { RequestsByDepartmentsBar } from "@/components/RequestsByDepartmentsBar";
@@ -58,6 +60,8 @@ export default function DashboardPage() {
   const [slaMetrics, setSlaMetrics] = useState<SlaSummary | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [exportingPdf, setExportingPdf] = useState(false);
+  const dashboardRef = useRef<HTMLDivElement>(null);
 
   const fetchDeals = useCallback(async () => {
     setError(null);
@@ -109,6 +113,47 @@ export default function DashboardPage() {
     setSelectedCategory(e.target.value);
   };
 
+  const exportToPDF = useCallback(async () => {
+    const el = dashboardRef.current;
+    if (!el) return;
+    setExportingPdf(true);
+    try {
+      const canvas = await html2canvas(el, {
+        scale: 2,
+        useCORS: true,
+        logging: false,
+        backgroundColor: "#f3f4f6",
+      });
+      const imgData = canvas.toDataURL("image/jpeg", 0.92);
+      const pdf = new jsPDF({
+        orientation: "landscape",
+        unit: "mm",
+        format: "a4",
+      });
+      const pageWidth = pdf.internal.pageSize.getWidth();
+      const pageHeight = pdf.internal.pageSize.getHeight();
+      const pxToMm = 25.4 / 96;
+      const imgW = canvas.width * pxToMm;
+      const imgH = canvas.height * pxToMm;
+      const scale = Math.min(
+        pageWidth / imgW,
+        pageHeight / imgH,
+        1
+      );
+      const w = imgW * scale;
+      const h = imgH * scale;
+      const x = (pageWidth - w) / 2;
+      const y = (pageHeight - h) / 2;
+      pdf.addImage(imgData, "JPEG", x, y, w, h);
+      const dateStr = formatDate(new Date());
+      pdf.save(`Analytics_Report_${dateStr}.pdf`);
+    } catch (err) {
+      console.error("PDF export failed:", err);
+    } finally {
+      setExportingPdf(false);
+    }
+  }, []);
+
   const dashboard = computeDashboardData(
     deals,
     stageNameMap,
@@ -151,6 +196,38 @@ export default function DashboardPage() {
               onApply={fetchDeals}
               loading={loading}
             />
+            <button
+              type="button"
+              onClick={exportToPDF}
+              disabled={loading || exportingPdf}
+              className="inline-flex items-center gap-2 rounded-md border border-indigo-600 bg-white px-4 py-2 text-sm font-medium text-indigo-600 shadow-sm transition hover:bg-indigo-50 disabled:opacity-50"
+              title="Export dashboard to PDF"
+            >
+              {exportingPdf ? (
+                <>
+                  <span className="h-4 w-4 animate-spin rounded-full border-2 border-indigo-600 border-t-transparent" />
+                  Exporting…
+                </>
+              ) : (
+                <>
+                  <svg
+                    className="h-5 w-5"
+                    fill="none"
+                    stroke="currentColor"
+                    viewBox="0 0 24 24"
+                    aria-hidden
+                  >
+                    <path
+                      strokeLinecap="round"
+                      strokeLinejoin="round"
+                      strokeWidth={2}
+                      d="M12 10v6m0 0l-3-3m3 3l3-3m2 8H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"
+                    />
+                  </svg>
+                  Export to PDF
+                </>
+              )}
+            </button>
           </div>
         </div>
       </header>
@@ -173,8 +250,8 @@ export default function DashboardPage() {
         )}
 
         {!loading && (
-          <>
-            <div className="mb-6">
+          <div ref={dashboardRef} className="space-y-6">
+            <div>
               <SlaMetrics metrics={slaMetrics} />
             </div>
             <div className="grid grid-cols-1 gap-6 lg:grid-cols-[5fr_7fr]">
@@ -194,7 +271,7 @@ export default function DashboardPage() {
                 <CountryChart countryGroups={dashboard.countryGroups} />
               </div>
             </div>
-          </>
+          </div>
         )}
       </main>
     </div>
