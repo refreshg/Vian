@@ -286,7 +286,7 @@ export async function fetchStageHistoryForDeals(
 
 /**
  * Fetches deals from Bitrix24 using crm.deal.list with optional date filter.
- * Uses DATE_CREATE filter with >= and <= for the given range.
+ * Uses DATE_CREATE with full-day boundaries (>= start 00:00:00, <= end 23:59:59).
  */
 export async function fetchDealList(params: {
   startDate: string;
@@ -297,9 +297,13 @@ export async function fetchDealList(params: {
   const endpoint = `${baseUrl}/crm.deal.list`;
 
   const categoryId = getCategoryId(params.categoryId);
+  const { from: dateFrom, to: dateTo } = buildDateBoundaries(
+    params.startDate,
+    params.endDate
+  );
   const filter: Record<string, string> = {
-    ">=DATE_CREATE": params.startDate,
-    "<=DATE_CREATE": params.endDate,
+    ">=DATE_CREATE": dateFrom,
+    "<=DATE_CREATE": dateTo,
     CATEGORY_ID: categoryId,
   };
 
@@ -344,47 +348,72 @@ export async function fetchDealList(params: {
 }
 
 /**
- * Fetches all deals in date range by following pagination (50 per page).
+ * Builds full-day date boundaries for Bitrix filter (inclusive full days).
+ * From = 00:00:00, To = 23:59:59 so no leads are lost at day boundaries.
+ * Bitrix interprets these in the portal's timezone when no offset is given.
+ */
+function buildDateBoundaries(startDate: string, endDate: string): {
+  from: string;
+  to: string;
+} {
+  const from = `${startDate.trim()} 00:00:00`;
+  const to = `${endDate.trim()} 23:59:59`;
+  return { from, to };
+}
+
+/**
+ * Fetches ALL deals in date range by paginating with crm.deal.list.
+ * No limit/top cap; uses >= and <= DATE_CREATE; loops until no more pages.
  */
 export async function fetchAllDealsInRange(params: {
   startDate: string;
   endDate: string;
   categoryId?: string;
 }): Promise<BitrixDealListResponse["result"]> {
-  const all: BitrixDealListResponse["result"] = [];
-  let start = 0;
-  const pageSize = 50;
+  const { from: dateFrom, to: dateTo } = buildDateBoundaries(
+    params.startDate,
+    params.endDate
+  );
   const categoryId = getCategoryId(params.categoryId);
 
-  while (true) {
-    const baseUrl = getWebhookUrl();
-    const endpoint = `${baseUrl}/crm.deal.list`;
-
   const filter: Record<string, string> = {
-    ">=DATE_CREATE": params.startDate,
-    "<=DATE_CREATE": params.endDate,
+    ">=DATE_CREATE": dateFrom,
+    "<=DATE_CREATE": dateTo,
     CATEGORY_ID: categoryId,
   };
 
-  const body = {
-    SELECT: [
-      "ID",
-      "TITLE",
-      "OPPORTUNITY",
-      "STAGE_ID",
-      "DATE_CREATE",
-      "CATEGORY_ID",
-      "SOURCE_ID",
-      "UF_CRM_1758023694929",
-      "UF_CRM_1753862633986",
-      "UF_CRM_1753861857976",
-      "UF_CRM_1768995573895",
-      "UF_CRM_1769688668259",
-    ],
-    FILTER: filter,
-    ORDER: { DATE_CREATE: "DESC" },
-    start,
-  };
+  console.log(
+    "📅 Bitrix DATE_CREATE filter (exact):",
+    JSON.stringify({ ">=DATE_CREATE": dateFrom, "<=DATE_CREATE": dateTo, CATEGORY_ID: categoryId })
+  );
+
+  const allDeals: BitrixDealListResponse["result"] = [];
+  let start = 0;
+  const baseUrl = getWebhookUrl();
+  const endpoint = `${baseUrl}/crm.deal.list`;
+
+  const SELECT = [
+    "ID",
+    "TITLE",
+    "OPPORTUNITY",
+    "STAGE_ID",
+    "DATE_CREATE",
+    "CATEGORY_ID",
+    "SOURCE_ID",
+    "UF_CRM_1758023694929",
+    "UF_CRM_1753862633986",
+    "UF_CRM_1753861857976",
+    "UF_CRM_1768995573895",
+    "UF_CRM_1769688668259",
+  ];
+
+  while (true) {
+    const body: Record<string, unknown> = {
+      SELECT,
+      FILTER: filter,
+      ORDER: { DATE_CREATE: "DESC" },
+      start,
+    };
 
     const response = await fetch(endpoint, {
       method: "POST",
@@ -405,11 +434,28 @@ export async function fetchAllDealsInRange(params: {
     }
 
     const result = (data.result ?? []) as BitrixDealListResponse["result"];
-    all.push(...result);
+    for (const deal of result) {
+      allDeals.push(deal);
+    }
 
-    if (!data.next || result.length < pageSize) break;
-    start = data.next;
+    console.log("📥 FETCHING PROGRESS:", allDeals.length, "deals so far...");
+
+    if (result.length === 0) {
+      break;
+    }
+
+    if (result.length < 50) {
+      break;
+    }
+
+    const nextVal = data.next;
+    if (nextVal != null) {
+      start = typeof nextVal === "number" ? nextVal : Number(nextVal);
+      if (!Number.isFinite(start)) start = start + result.length;
+    } else {
+      start = start + result.length;
+    }
   }
 
-  return all;
+  return allDeals;
 }
