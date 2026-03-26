@@ -185,6 +185,20 @@ export interface StageHistoryItem {
   [key: string]: unknown;
 }
 
+/** CRM activity row used for Follow up in Months SLA timing. */
+export interface BitrixActivityItem {
+  ID: string;
+  OWNER_ID?: string | number;
+  OWNER_TYPE_ID?: string | number;
+  CREATED?: string;
+  START_TIME?: string;
+  END_TIME?: string;
+  DEADLINE?: string;
+  LAST_UPDATED?: string;
+  COMPLETED?: string;
+  [key: string]: unknown;
+}
+
 /**
  * Fetches stage history for the given deal IDs using crm.stagehistory.list.
  * Only histories for the provided OWNER_IDs are returned.
@@ -285,6 +299,103 @@ export async function fetchStageHistoryForDeals(
 }
 
 /**
+ * Fetches activities for deal IDs via crm.activity.list.
+ * Returns a map keyed by OWNER_ID (deal ID string).
+ */
+export async function fetchActivitiesForDeals(
+  dealIds: string[]
+): Promise<Record<string, BitrixActivityItem[]>> {
+  const ids = Array.isArray(dealIds) ? dealIds : [];
+  if (ids.length === 0) return {};
+
+  const baseUrl = getWebhookUrl();
+  const endpoint = `${baseUrl}/crm.activity.list`;
+  const byDeal: Record<string, BitrixActivityItem[]> = {};
+  const chunkSize = 20;
+
+  function asNumberArray(values: string[]): number[] {
+    return values
+      .map((v) => Number(v))
+      .filter((n) => Number.isFinite(n) && n > 0);
+  }
+
+  for (let i = 0; i < ids.length; i += chunkSize) {
+    const idsChunk = ids.slice(i, i + chunkSize);
+    const idsChunkNumbers = asNumberArray(idsChunk);
+    const ownerIdFilter = idsChunkNumbers.length > 0 ? idsChunkNumbers : idsChunk;
+    let start = 0;
+
+    // eslint-disable-next-line no-constant-condition
+    while (true) {
+      const body: Record<string, unknown> = {
+        filter: {
+          OWNER_TYPE_ID: 2,
+          OWNER_ID: ownerIdFilter,
+        },
+        order: { ID: "ASC" },
+        select: [
+          "ID",
+          "OWNER_ID",
+          "OWNER_TYPE_ID",
+          "CREATED",
+          "START_TIME",
+          "END_TIME",
+          "DEADLINE",
+          "LAST_UPDATED",
+          "COMPLETED",
+        ],
+        start,
+      };
+
+      const response = await fetch(endpoint, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(body),
+      });
+
+      const data = await response.json();
+
+      if (!response.ok) {
+        throw new Error(
+          data.error_description || data.error || `HTTP ${response.status}`
+        );
+      }
+
+      if (data.error) {
+        throw new Error(data.error_description || data.error);
+      }
+
+      const result = (data.result ?? []) as BitrixActivityItem[];
+      for (const activity of result) {
+        const key = String(activity?.OWNER_ID ?? "");
+        if (!key) continue;
+        if (!byDeal[key]) byDeal[key] = [];
+        byDeal[key].push(activity);
+      }
+
+      if (result.length < 50) break;
+      const nextVal = data.next;
+      if (typeof nextVal === "number") {
+        if (nextVal === start) break;
+        start = nextVal;
+      } else {
+        start += result.length;
+      }
+    }
+  }
+
+  for (const key of Object.keys(byDeal)) {
+    byDeal[key].sort((a, b) => {
+      const ta = new Date(String(a.CREATED ?? a.START_TIME ?? "")).getTime();
+      const tb = new Date(String(b.CREATED ?? b.START_TIME ?? "")).getTime();
+      return ta - tb;
+    });
+  }
+
+  return byDeal;
+}
+
+/**
  * Fetches deals from Bitrix24 using crm.deal.list with optional date filter.
  * Uses DATE_CREATE with full-day boundaries (>= start 00:00:00, <= end 23:59:59).
  */
@@ -352,12 +463,29 @@ export async function fetchDealList(params: {
  * From = 00:00:00, To = 23:59:59 so no leads are lost at day boundaries.
  * Bitrix interprets these in the portal's timezone when no offset is given.
  */
+function normalizeDateTimeInput(value: string, mode: "start" | "end"): string {
+  const trimmed = (value ?? "").trim();
+  if (!trimmed) return mode === "start" ? "1970-01-01 00:00:00" : "1970-01-01 23:59:59";
+  // datetime-local format: YYYY-MM-DDTHH:mm
+  if (trimmed.includes("T")) {
+    const withSpace = trimmed.replace("T", " ");
+    return withSpace.length === 16 ? `${withSpace}:00` : withSpace;
+  }
+  // date-only format: YYYY-MM-DD
+  if (/^\d{4}-\d{2}-\d{2}$/.test(trimmed)) {
+    return mode === "start"
+      ? `${trimmed} 00:00:00`
+      : `${trimmed} 23:59:59`;
+  }
+  return trimmed;
+}
+
 function buildDateBoundaries(startDate: string, endDate: string): {
   from: string;
   to: string;
 } {
-  const from = `${startDate.trim()} 00:00:00`;
-  const to = `${endDate.trim()} 23:59:59`;
+  const from = normalizeDateTimeInput(startDate, "start");
+  const to = normalizeDateTimeInput(endDate, "end");
   return { from, to };
 }
 

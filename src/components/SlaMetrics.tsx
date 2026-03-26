@@ -20,12 +20,13 @@ export function SlaMetrics({ metrics }: SlaMetricsProps) {
   const items = [
     metrics.firstCommunication,
     metrics.followUp,
+    metrics.followUpMonths,
     metrics.priceSharing,
   ];
 
   return (
     <div className="rounded-lg border border-gray-200 bg-white p-6">
-      <div className="grid gap-6 sm:grid-cols-3">
+      <div className="grid gap-6 sm:grid-cols-2 lg:grid-cols-4">
         {items.map((m) => (
           <div key={m.title} className="flex flex-col">
             <span className="text-3xl font-bold text-gray-900">

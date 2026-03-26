@@ -1,5 +1,5 @@
 import type { BitrixDeal } from "@/types/bitrix";
-import type { StageHistoryItem } from "./bitrix";
+import type { BitrixActivityItem, StageHistoryItem } from "./bitrix";
 
 export interface SlaMetric {
   title: string;
@@ -11,6 +11,7 @@ export interface SlaMetric {
 export interface SlaSummary {
   firstCommunication: SlaMetric;
   followUp: SlaMetric;
+  followUpMonths: SlaMetric;
   priceSharing: SlaMetric;
 }
 
@@ -35,6 +36,8 @@ function calendarHoursBetween(startMs: number, endMs: number): number {
 /** Stage name phrases for multi-pipeline SLA (stage IDs differ per pipeline, e.g. C1:NEW vs C2:NEW). */
 const PHRASE_INITIAL = "Coordinator did not start";
 const PHRASE_FOLLOW_UP = "Follow up in 24 Hours";
+const PHRASE_FOLLOW_UP_MONTHS = "Follow up in Months";
+const PHRASE_CONTACT_SUCCESSFUL = "Contact was Successful";
 const PHRASE_PRICE_SHARING = "Offer Finalization for Patient";
 
 /** Return stage IDs whose human-readable name contains the given phrase (case-insensitive). */
@@ -47,6 +50,17 @@ function stageIdsMatchingName(
   if (!needle) return set;
   for (const [id, name] of Object.entries(stageIdToName)) {
     if ((name ?? "").toLowerCase().includes(needle)) set.add(id.trim());
+  }
+  return set;
+}
+
+function stageIdsMatchingRegex(
+  stageIdToName: Record<string, string>,
+  pattern: RegExp
+): Set<string> {
+  const set = new Set<string>();
+  for (const [id, name] of Object.entries(stageIdToName)) {
+    if (pattern.test(name ?? "")) set.add(id.trim());
   }
   return set;
 }
@@ -66,6 +80,15 @@ function parseTimeMs(value: string | undefined | null): number {
   if (value == null || typeof value !== "string") return NaN;
   const t = new Date(value).getTime();
   return Number.isFinite(t) ? t : NaN;
+}
+
+function activityEffectiveTimeMs(activity: BitrixActivityItem): number {
+  const completed = String(activity.COMPLETED ?? "").toUpperCase() === "Y";
+  const completedAt = parseTimeMs(
+    String(activity.END_TIME ?? activity.LAST_UPDATED ?? "")
+  );
+  if (completed && Number.isFinite(completedAt)) return completedAt;
+  return Date.now();
 }
 
 /** Normalize STAGE_ID for comparison (trim, no case change — Bitrix returns exact casing). */
@@ -116,6 +139,7 @@ export function computeSlaMetrics(
   deals: BitrixDeal[],
   histories: StageHistoryItem[],
   stageIdToName: Record<string, string> = {},
+  activitiesByDeal: Record<string, BitrixActivityItem[]> = {},
   options?: {
     priceSharingDebugOut?: PriceSharingDebugRow[];
     firstCommDebugOut?: any[];
@@ -127,6 +151,18 @@ export function computeSlaMetrics(
 
   const initialStageIds = buildInitialStageIds(stageIdToName);
   const followUpStageIds = stageIdsMatchingName(stageIdToName, PHRASE_FOLLOW_UP);
+  const followUpDayStageIds = stageIdsMatchingRegex(
+    stageIdToName,
+    /\bDay\s*[1-5]\b/i
+  );
+  const contactSuccessfulStageIds = stageIdsMatchingName(
+    stageIdToName,
+    PHRASE_CONTACT_SUCCESSFUL
+  );
+  const followUpMonthsStageIds = stageIdsMatchingName(
+    stageIdToName,
+    PHRASE_FOLLOW_UP_MONTHS
+  );
   const priceSharingStageIds = stageIdsMatchingName(
     stageIdToName,
     PHRASE_PRICE_SHARING
@@ -134,6 +170,11 @@ export function computeSlaMetrics(
 
   const isInitialStage = (sid: string) => initialStageIds.has(sid);
   const isFollowUpStage = (sid: string) => followUpStageIds.has(sid);
+  const isFollowUpDayStage = (sid: string) => followUpDayStageIds.has(sid);
+  const isContactSuccessfulStage = (sid: string) =>
+    contactSuccessfulStageIds.has(sid);
+  const isFollowUpMonthsStage = (sid: string) =>
+    followUpMonthsStageIds.has(sid);
   const isPriceSharingStage = (sid: string) => priceSharingStageIds.has(sid);
 
   // —— A. First Communication (<= 1 calendar hour from DATE_CREATE to first move out of initial stage) ——
@@ -192,28 +233,60 @@ export function computeSlaMetrics(
     });
   }
 
-  // —— B. Follow-up (< 24 hours from entry into "Follow up in 24 Hours" to next event or now) ——
+  // —— B. Follow-up on Time (Day 1 - Day 5; on-time when it reaches "Contact was Successful" within 5 days) ——
   let followOnTime = 0;
   let followTotal = 0;
+  const FIVE_DAYS_MS = 5 * TWENTY_FOUR_HOURS_MS;
+  for (const deal of safeDeals) {
+    const dealId = deal?.ID != null ? String(deal.ID) : "";
+    if (!dealId) continue;
+    const events = historyMap[dealId];
+    if (!events?.length) continue;
+    const entryIndex = events.findIndex((e) => {
+      const sid = stageId(e.STAGE_ID);
+      return isFollowUpStage(sid) || isFollowUpDayStage(sid);
+    });
+    if (entryIndex === -1) continue;
+    followTotal += 1;
+    const entryMs = parseTimeMs(events[entryIndex].CREATED_TIME);
+    if (!Number.isFinite(entryMs)) continue;
+    const successEvent = events
+      .slice(entryIndex + 1)
+      .find((e) => isContactSuccessfulStage(stageId(e.STAGE_ID)));
+    if (!successEvent) continue;
+    const successMs = parseTimeMs(successEvent.CREATED_TIME);
+    if (!Number.isFinite(successMs)) continue;
+    const diffMs = successMs - entryMs;
+    if (diffMs <= FIVE_DAYS_MS) followOnTime += 1;
+  }
+
+  // —— B2. Follow-up in Months on Time (activity deadline based) ——
+  let followMonthsOnTime = 0;
+  let followMonthsTotal = 0;
   for (const deal of safeDeals) {
     const dealId = deal?.ID != null ? String(deal.ID) : "";
     if (!dealId) continue;
     const events = historyMap[dealId];
     if (!events?.length) continue;
     const entryIndex = events.findIndex((e) =>
-      isFollowUpStage(stageId(e.STAGE_ID))
+      isFollowUpMonthsStage(stageId(e.STAGE_ID))
     );
     if (entryIndex === -1) continue;
-    followTotal += 1;
     const entryMs = parseTimeMs(events[entryIndex].CREATED_TIME);
     if (!Number.isFinite(entryMs)) continue;
-    const nextEvent = events[entryIndex + 1];
-    const endMs = nextEvent
-      ? parseTimeMs(nextEvent.CREATED_TIME)
-      : Date.now();
-    const endMsSafe = Number.isFinite(endMs) ? endMs : Date.now();
-    const diffMs = endMsSafe - entryMs;
-    if (diffMs <= TWENTY_FOUR_HOURS_MS) followOnTime += 1;
+    followMonthsTotal += 1;
+
+    const dealActivities = activitiesByDeal[dealId] ?? [];
+    const activity = dealActivities.find((a) => {
+      const createdMs = parseTimeMs(String(a.CREATED ?? a.START_TIME ?? ""));
+      return Number.isFinite(createdMs) ? createdMs >= entryMs : true;
+    }) ?? dealActivities[0];
+
+    if (!activity) continue;
+    const deadlineMs = parseTimeMs(String(activity.DEADLINE ?? ""));
+    if (!Number.isFinite(deadlineMs)) continue;
+    const effectiveMs = activityEffectiveTimeMs(activity);
+    if (effectiveMs <= deadlineMs) followMonthsOnTime += 1;
   }
 
   // —— C. Price Sharing (< 24 hours from entry into "Offer Finalization for Patient" to next event or now) ——
@@ -281,6 +354,11 @@ export function computeSlaMetrics(
       firstTotal
     ),
     followUp: makeMetric("Follow-up on Time", followOnTime, followTotal),
+    followUpMonths: makeMetric(
+      "Follow up in Months on Time",
+      followMonthsOnTime,
+      followMonthsTotal
+    ),
     priceSharing: makeMetric(
       "Price sharing to Patient on Time",
       priceOnTime,

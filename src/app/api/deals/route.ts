@@ -5,6 +5,7 @@ import {
   fetchSourceNameMap,
   fetchDealFieldOptions,
   fetchStageHistoryForDeals,
+  fetchActivitiesForDeals,
 } from "@/lib/bitrix";
 import { computeSlaMetrics, type PriceSharingDebugRow } from "@/lib/slaMetrics";
 
@@ -54,6 +55,12 @@ export async function GET(request: NextRequest) {
       stageHistories = [];
     }
     const safeStageHistories = Array.isArray(stageHistories) ? stageHistories : [];
+    let activitiesByDeal: Record<string, any[]> = {};
+    try {
+      activitiesByDeal = await fetchActivitiesForDeals(dealIds);
+    } catch {
+      activitiesByDeal = {};
+    }
 
     const rejectionReasonsFieldId =
       category === "3"
@@ -84,12 +91,14 @@ export async function GET(request: NextRequest) {
         dealsForCategory,
         safeStageHistories,
         stageResult?.nameMap ?? {},
+        activitiesByDeal,
         { priceSharingDebugOut: priceSharingDebug, firstCommDebugOut: firstCommDebug }
       );
     } catch {
       slaMetrics = {
         firstCommunication: { title: "First Communication on Time", onTimeCount: 0, totalCount: 0, rate: 0 },
         followUp: { title: "Follow-up on Time", onTimeCount: 0, totalCount: 0, rate: 0 },
+        followUpMonths: { title: "Follow up in Months on Time", onTimeCount: 0, totalCount: 0, rate: 0 },
         priceSharing: { title: "Price sharing to Patient on Time", onTimeCount: 0, totalCount: 0, rate: 0 },
       };
     }

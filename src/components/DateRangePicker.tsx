@@ -22,7 +22,7 @@ export function DateRangePicker({
       <label className="flex items-center gap-2 text-sm text-gray-500">
         <span>From</span>
         <input
-          type="date"
+          type="datetime-local"
           value={startDate}
           onChange={(e) => onStartDateChange(e.target.value)}
           className="rounded-md border border-gray-200 bg-white px-3 py-2 text-sm text-gray-900 focus:border-indigo-500 focus:outline-none focus:ring-1 focus:ring-indigo-500"
@@ -31,7 +31,7 @@ export function DateRangePicker({
       <label className="flex items-center gap-2 text-sm text-gray-500">
         <span>To</span>
         <input
-          type="date"
+          type="datetime-local"
           value={endDate}
           onChange={(e) => onEndDateChange(e.target.value)}
           className="rounded-md border border-gray-200 bg-white px-3 py-2 text-sm text-gray-900 focus:border-indigo-500 focus:outline-none focus:ring-1 focus:ring-indigo-500"

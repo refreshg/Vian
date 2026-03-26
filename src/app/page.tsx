@@ -20,6 +20,15 @@ function formatDate(d: Date): string {
   return d.toISOString().slice(0, 10);
 }
 
+function formatDateTimeLocal(d: Date): string {
+  const y = d.getFullYear();
+  const m = String(d.getMonth() + 1).padStart(2, "0");
+  const day = String(d.getDate()).padStart(2, "0");
+  const hh = String(d.getHours()).padStart(2, "0");
+  const mm = String(d.getMinutes()).padStart(2, "0");
+  return `${y}-${m}-${day}T${hh}:${mm}`;
+}
+
 const PIPELINES: { id: string; name: string }[] = [
   { id: "1", name: "Caucasus Medical Centre" },
   { id: "2", name: "M.Iashvili Children's Central Hospital" },
@@ -32,9 +41,10 @@ export default function DashboardPage() {
   const [startDate, setStartDate] = useState(() => {
     const d = new Date();
     d.setMonth(d.getMonth() - 1);
-    return formatDate(d);
+    d.setHours(0, 0, 0, 0);
+    return formatDateTimeLocal(d);
   });
-  const [endDate, setEndDate] = useState(() => formatDate(new Date()));
+  const [endDate, setEndDate] = useState(() => formatDateTimeLocal(new Date()));
   const [selectedCategory, setSelectedCategory] = useState("1");
   const [deals, setDeals] = useState<BitrixDeal[]>([]);
   const [stageNameMap, setStageNameMap] = useState<Record<string, string>>({});
