@@ -143,6 +143,7 @@ export function computeSlaMetrics(
   options?: {
     priceSharingDebugOut?: PriceSharingDebugRow[];
     firstCommDebugOut?: any[];
+    followUpOverrideIdToName?: Record<string, string>;
   }
 ): SlaSummary {
   console.log("🚀 SLA Metrics calculation started...");
@@ -237,6 +238,17 @@ export function computeSlaMetrics(
   let followOnTime = 0;
   let followTotal = 0;
   const FIVE_DAYS_MS = 5 * TWENTY_FOUR_HOURS_MS;
+  const normalizeYes = (value: unknown): boolean => {
+    const raw = String(value ?? "").trim().toLowerCase();
+    return raw === "yes" || raw === "y" || raw === "true" || raw === "1";
+  };
+  const isYesValue = (value: unknown): boolean => {
+    if (normalizeYes(value)) return true;
+    const id = String(value ?? "").trim();
+    if (!id) return false;
+    const mappedLabel = options?.followUpOverrideIdToName?.[id];
+    return normalizeYes(mappedLabel);
+  };
   for (const deal of safeDeals) {
     const dealId = deal?.ID != null ? String(deal.ID) : "";
     if (!dealId) continue;
@@ -248,6 +260,10 @@ export function computeSlaMetrics(
     });
     if (entryIndex === -1) continue;
     followTotal += 1;
+    if (isYesValue((deal as any).UF_CRM_1774537634447)) {
+      followOnTime += 1;
+      continue;
+    }
     const entryMs = parseTimeMs(events[entryIndex].CREATED_TIME);
     if (!Number.isFinite(entryMs)) continue;
     const successEvent = events

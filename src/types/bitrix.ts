@@ -18,6 +18,8 @@ export interface BitrixDeal {
   UF_CRM_1768995573895?: string | number;
   /** Country dropdown – UF_CRM_1769688668259 */
   UF_CRM_1769688668259?: string | number;
+  /** Follow-up on-time override dropdown – UF_CRM_1774537634447 */
+  UF_CRM_1774537634447?: string | number;
   /** Allow dynamic rejection/custom field access by key */
   [key: string]: string | number | undefined;
 }

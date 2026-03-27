@@ -16,6 +16,7 @@ const REJECTION_REASONS_FIELD_ID = "UF_CRM_1753862633986";
 const REJECTION_REASONS_FIELD_ID_PIPELINE_3 = "UF_CRM_1753861857976";
 const COMMENT_LIST_FIELD_ID = "UF_CRM_1768995573895";
 const COUNTRY_FIELD_ID = "UF_CRM_1769688668259";
+const FOLLOW_UP_OVERRIDE_FIELD_ID = "UF_CRM_1774537634447";
 
 export async function GET(request: NextRequest) {
   const searchParams = request.nextUrl.searchParams;
@@ -74,6 +75,7 @@ export async function GET(request: NextRequest) {
       rejectionReasonIdToName,
       commentListIdToName,
       countryIdToName,
+      followUpOverrideIdToName,
     ] = await Promise.all([
       fetchStageNameMap(category),
       fetchSourceNameMap(),
@@ -81,6 +83,7 @@ export async function GET(request: NextRequest) {
       fetchDealFieldOptions(rejectionReasonsFieldId),
       fetchDealFieldOptions(COMMENT_LIST_FIELD_ID),
       fetchDealFieldOptions(COUNTRY_FIELD_ID),
+      fetchDealFieldOptions(FOLLOW_UP_OVERRIDE_FIELD_ID),
     ]);
 
     let slaMetrics;
@@ -92,7 +95,11 @@ export async function GET(request: NextRequest) {
         safeStageHistories,
         stageResult?.nameMap ?? {},
         activitiesByDeal,
-        { priceSharingDebugOut: priceSharingDebug, firstCommDebugOut: firstCommDebug }
+        {
+          priceSharingDebugOut: priceSharingDebug,
+          firstCommDebugOut: firstCommDebug,
+          followUpOverrideIdToName,
+        }
       );
     } catch {
       slaMetrics = {

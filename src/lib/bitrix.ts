@@ -432,6 +432,7 @@ export async function fetchDealList(params: {
       "UF_CRM_1753861857976",
       "UF_CRM_1768995573895",
       "UF_CRM_1769688668259",
+      "UF_CRM_1774537634447",
     ],
     FILTER: filter,
     ORDER: { DATE_CREATE: "DESC" },
@@ -533,6 +534,7 @@ export async function fetchAllDealsInRange(params: {
     "UF_CRM_1753861857976",
     "UF_CRM_1768995573895",
     "UF_CRM_1769688668259",
+    "UF_CRM_1774537634447",
   ];
 
   while (true) {
