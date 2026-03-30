@@ -253,6 +253,13 @@ export function computeSlaMetrics(
     const dealId = deal?.ID != null ? String(deal.ID) : "";
     if (!dealId) continue;
     const events = historyMap[dealId];
+    // Override: if UF_CRM_1774537634447 is "yes" (or maps to Yes), count as on-time
+    // even if the deal never entered Day 1-5 / Follow-up stages.
+    if (isYesValue((deal as any).UF_CRM_1774537634447)) {
+      followTotal += 1;
+      followOnTime += 1;
+      continue;
+    }
     if (!events?.length) continue;
     const entryIndex = events.findIndex((e) => {
       const sid = stageId(e.STAGE_ID);
@@ -260,10 +267,6 @@ export function computeSlaMetrics(
     });
     if (entryIndex === -1) continue;
     followTotal += 1;
-    if (isYesValue((deal as any).UF_CRM_1774537634447)) {
-      followOnTime += 1;
-      continue;
-    }
     const entryMs = parseTimeMs(events[entryIndex].CREATED_TIME);
     if (!Number.isFinite(entryMs)) continue;
     const successEvent = events
