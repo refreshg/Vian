@@ -98,6 +98,9 @@ export default function DashboardPage() {
       if (Array.isArray(data.firstCommDebug)) {
         console.log("🚨 FIRST COMM VERIFICATION (24/7):", data.firstCommDebug);
       }
+      if (Array.isArray(data.followUpMonthsDebug)) {
+        console.log("🗓️ FOLLOW UP MONTHS DEBUG:", data.followUpMonthsDebug);
+      }
     } catch (e) {
       setError(e instanceof Error ? e.message : "Something went wrong");
       setDeals([]);
@@ -128,33 +131,46 @@ export default function DashboardPage() {
     if (!el) return;
     setExportingPdf(true);
     try {
+      const rect = el.getBoundingClientRect();
       const canvas = await html2canvas(el, {
         scale: 2,
         useCORS: true,
         logging: false,
         backgroundColor: "#f3f4f6",
+        scrollX: 0,
+        scrollY: -window.scrollY,
+        windowWidth: Math.ceil(rect.width),
+        windowHeight: Math.ceil(rect.height),
       });
+
       const imgData = canvas.toDataURL("image/jpeg", 0.92);
+      const orientation =
+        canvas.width >= canvas.height ? "landscape" : "portrait";
       const pdf = new jsPDF({
-        orientation: "landscape",
+        orientation,
         unit: "mm",
         format: "a4",
       });
+
       const pageWidth = pdf.internal.pageSize.getWidth();
       const pageHeight = pdf.internal.pageSize.getHeight();
-      const pxToMm = 25.4 / 96;
-      const imgW = canvas.width * pxToMm;
-      const imgH = canvas.height * pxToMm;
-      const scale = Math.min(
-        pageWidth / imgW,
-        pageHeight / imgH,
-        1
-      );
-      const w = imgW * scale;
-      const h = imgH * scale;
-      const x = (pageWidth - w) / 2;
-      const y = (pageHeight - h) / 2;
-      pdf.addImage(imgData, "JPEG", x, y, w, h);
+
+      // Fit width to page, then paginate vertically if needed.
+      const imgWidthMm = pageWidth;
+      const imgHeightMm = (canvas.height * imgWidthMm) / canvas.width;
+
+      let remainingHeightMm = imgHeightMm;
+      let positionY = 0;
+
+      while (remainingHeightMm > 0) {
+        pdf.addImage(imgData, "JPEG", 0, positionY, imgWidthMm, imgHeightMm);
+        remainingHeightMm -= pageHeight;
+        if (remainingHeightMm > 0) {
+          pdf.addPage();
+          positionY -= pageHeight;
+        }
+      }
+
       const dateStr = formatDate(new Date());
       pdf.save(`Analytics_Report_${dateStr}.pdf`);
     } catch (err) {

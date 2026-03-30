@@ -89,6 +89,7 @@ export async function GET(request: NextRequest) {
     let slaMetrics;
     const priceSharingDebug: PriceSharingDebugRow[] = [];
     const firstCommDebug: any[] = [];
+    const followUpMonthsDebug: any[] = [];
     try {
       slaMetrics = computeSlaMetrics(
         dealsForCategory,
@@ -99,6 +100,7 @@ export async function GET(request: NextRequest) {
           priceSharingDebugOut: priceSharingDebug,
           firstCommDebugOut: firstCommDebug,
           followUpOverrideIdToName,
+          followUpMonthsDebugOut: followUpMonthsDebug,
         }
       );
     } catch {
@@ -123,6 +125,7 @@ export async function GET(request: NextRequest) {
       slaMetrics,
       priceSharingDebug,
       firstCommDebug,
+      followUpMonthsDebug,
     });
   } catch (err) {
     const message = err instanceof Error ? err.message : "Failed to fetch deals";

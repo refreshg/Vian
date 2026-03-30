@@ -144,6 +144,7 @@ export function computeSlaMetrics(
     priceSharingDebugOut?: PriceSharingDebugRow[];
     firstCommDebugOut?: any[];
     followUpOverrideIdToName?: Record<string, string>;
+    followUpMonthsDebugOut?: any[];
   }
 ): SlaSummary {
   console.log("🚀 SLA Metrics calculation started...");
@@ -177,6 +178,15 @@ export function computeSlaMetrics(
   const isFollowUpMonthsStage = (sid: string) =>
     followUpMonthsStageIds.has(sid);
   const isPriceSharingStage = (sid: string) => priceSharingStageIds.has(sid);
+
+  // Debug: verify stage detection for Follow up in Months
+  if (process.env.NODE_ENV !== "production") {
+    console.log("🧩 SLA stage match counts:", {
+      followUpMonthsStageIds: followUpMonthsStageIds.size,
+      followUpDayStageIds: followUpDayStageIds.size,
+      contactSuccessfulStageIds: contactSuccessfulStageIds.size,
+    });
+  }
 
   // —— A. First Communication (<= 1 calendar hour from DATE_CREATE to first move out of initial stage) ——
   // First transition to ANY stage strictly different from initial. Ignore creation-moment assignment (event time must be > createMs).
@@ -293,7 +303,10 @@ export function computeSlaMetrics(
     if (diffMs <= FIVE_DAYS_MS) followOnTime += 1;
   }
 
-  // —— B2. Follow-up in Months on Time (activity deadline based) ——
+  // —— B2. Follow-up in Months on Time ——
+  // Qualifying: entered "Follow up in Months".
+  // On-time: entry happened within the same calendar month as deal creation.
+  // Override: UF_CRM_1774537634447 = yes → on-time regardless.
   let followMonthsOnTime = 0;
   let followMonthsTotal = 0;
   for (const deal of safeDeals) {
@@ -305,21 +318,20 @@ export function computeSlaMetrics(
       isFollowUpMonthsStage(stageId(e.STAGE_ID))
     );
     if (entryIndex === -1) continue;
-    const entryMs = parseTimeMs(events[entryIndex].CREATED_TIME);
-    if (!Number.isFinite(entryMs)) continue;
     followMonthsTotal += 1;
-
-    const dealActivities = activitiesByDeal[dealId] ?? [];
-    const activity = dealActivities.find((a) => {
-      const createdMs = parseTimeMs(String(a.CREATED ?? a.START_TIME ?? ""));
-      return Number.isFinite(createdMs) ? createdMs >= entryMs : true;
-    }) ?? dealActivities[0];
-
-    if (!activity) continue;
-    const deadlineMs = parseTimeMs(String(activity.DEADLINE ?? ""));
-    if (!Number.isFinite(deadlineMs)) continue;
-    const effectiveMs = activityEffectiveTimeMs(activity);
-    if (effectiveMs <= deadlineMs) followMonthsOnTime += 1;
+    if (isYesValue((deal as any).UF_CRM_1774537634447)) {
+      followMonthsOnTime += 1;
+      continue;
+    }
+    const createMs = parseTimeMs(String((deal as any).DATE_CREATE ?? ""));
+    const entryMs = parseTimeMs(events[entryIndex].CREATED_TIME);
+    if (!Number.isFinite(createMs) || !Number.isFinite(entryMs)) continue;
+    const createdAt = new Date(createMs);
+    const enteredAt = new Date(entryMs);
+    const sameMonth =
+      createdAt.getFullYear() === enteredAt.getFullYear() &&
+      createdAt.getMonth() === enteredAt.getMonth();
+    if (sameMonth) followMonthsOnTime += 1;
   }
 
   // —— C. Price Sharing (< 24 hours from entry into "Offer Finalization for Patient" to next event or now) ——

@@ -288,10 +288,21 @@ export async function fetchStageHistoryForDeals(
       const { items, next } = extractItemsAndNext(data);
       all.push(...items);
 
+      // Robust pagination: Bitrix may omit `next` even when there are more results.
+      // Continue while we keep receiving full pages (50). Prefer `next` when present.
       if (items.length === 0) break;
-      if (typeof next !== "number") break;
-      if (next === start) break; // safety against infinite loops
-      start = next;
+
+      console.log(
+        `📜 StageHistory progress (chunk ${Math.floor(i / chunkSize) + 1}): start=${start}, fetched=${items.length}, total=${all.length}`
+      );
+
+      if (items.length < 50) break;
+
+      if (typeof next === "number" && next !== start) {
+        start = next;
+      } else {
+        start += items.length;
+      }
     }
   }
 
@@ -311,18 +322,11 @@ export async function fetchActivitiesForDeals(
   const baseUrl = getWebhookUrl();
   const endpoint = `${baseUrl}/crm.activity.list`;
   const byDeal: Record<string, BitrixActivityItem[]> = {};
-  const chunkSize = 20;
-
-  function asNumberArray(values: string[]): number[] {
-    return values
-      .map((v) => Number(v))
-      .filter((n) => Number.isFinite(n) && n > 0);
-  }
-
-  for (let i = 0; i < ids.length; i += chunkSize) {
-    const idsChunk = ids.slice(i, i + chunkSize);
-    const idsChunkNumbers = asNumberArray(idsChunk);
-    const ownerIdFilter = idsChunkNumbers.length > 0 ? idsChunkNumbers : idsChunk;
+  // Bitrix crm.activity.list filtering by OWNER_ID array is unreliable on some portals.
+  // Fetch per-deal to ensure we don't miss activities (critical for Follow up in Months SLA).
+  for (const dealId of ids) {
+    const ownerId = Number(dealId);
+    const ownerIdFilter: string | number = Number.isFinite(ownerId) ? ownerId : dealId;
     let start = 0;
 
     // eslint-disable-next-line no-constant-condition
@@ -367,7 +371,7 @@ export async function fetchActivitiesForDeals(
 
       const result = (data.result ?? []) as BitrixActivityItem[];
       for (const activity of result) {
-        const key = String(activity?.OWNER_ID ?? "");
+        const key = String(activity?.OWNER_ID ?? dealId);
         if (!key) continue;
         if (!byDeal[key]) byDeal[key] = [];
         byDeal[key].push(activity);
