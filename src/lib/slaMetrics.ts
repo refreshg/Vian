@@ -243,11 +243,25 @@ export function computeSlaMetrics(
     return raw === "yes" || raw === "y" || raw === "true" || raw === "1";
   };
   const isYesValue = (value: unknown): boolean => {
+    // Bitrix dropdowns can return ID, label, array of IDs, or delimited string.
     if (normalizeYes(value)) return true;
-    const id = String(value ?? "").trim();
-    if (!id) return false;
-    const mappedLabel = options?.followUpOverrideIdToName?.[id];
-    return normalizeYes(mappedLabel);
+    const parts: string[] = [];
+    if (Array.isArray(value)) {
+      for (const v of value) parts.push(String(v ?? "").trim());
+    } else {
+      const s = String(value ?? "").trim();
+      if (s) {
+        // split on common delimiters for multi-values
+        for (const p of s.split(/[,\|;]+/g)) parts.push(p.trim());
+      }
+    }
+    for (const id of parts) {
+      if (!id) continue;
+      if (normalizeYes(id)) return true;
+      const mappedLabel = options?.followUpOverrideIdToName?.[id];
+      if (normalizeYes(mappedLabel)) return true;
+    }
+    return false;
   };
   for (const deal of safeDeals) {
     const dealId = deal?.ID != null ? String(deal.ID) : "";
