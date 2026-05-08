@@ -104,7 +104,7 @@ function extractListValueIds(raw: unknown): string[] {
   return parts.length > 0 ? parts : [value];
 }
 
-const COMMENT_SECTION_SEPARATOR = "— UF_CRM_1774442321633 —";
+const COMMENT_SECTION_SEPARATOR = "— Reasons for Communication Loss —";
 
 export function computeDashboardData(
   deals: BitrixDeal[],
@@ -224,7 +224,7 @@ export function computeDashboardData(
     .map(([label, count]) => ({ label, count }))
     .sort((a, b) => b.count - a.count);
   const stageSpecificRows: CommentListRow[] = Array.from(stageSpecificCommentMap.entries())
-    .map(([label, count]) => ({ label: `UF_CRM_1774442321633 | ${label}`, count }))
+    .map(([label, count]) => ({ label, count }))
     .sort((a, b) => b.count - a.count);
   const commentListRows: CommentListRow[] =
     primaryRows.length > 0 && stageSpecificRows.length > 0
