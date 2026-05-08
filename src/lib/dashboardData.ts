@@ -69,6 +69,28 @@ export interface CountryGroup {
   percentage: number;
 }
 
+function extractListValueIds(raw: unknown): string[] {
+  if (raw == null || raw === "") return [];
+  if (Array.isArray(raw)) {
+    return raw.map((v) => String(v ?? "").trim()).filter(Boolean);
+  }
+  const value = String(raw).trim();
+  if (!value) return [];
+  const parts = value
+    .split(/[,\|;]+/g)
+    .map((v) => v.trim())
+    .filter(Boolean);
+  return parts.length > 0 ? parts : [value];
+}
+
+const COMMENT_STAGE_IDS_FOR_UF_CRM_1774442321633 = new Set([
+  "C1:UC_6L0FQZ",
+  "C2:UC_G6FHFG",
+  "C3:UC_SRAOIM",
+  "C4:UC_PHOHBW",
+  "C5:6",
+]);
+
 export function computeDashboardData(
   deals: BitrixDeal[],
   stageIdToName?: Record<string, string>,
@@ -163,18 +185,22 @@ export function computeDashboardData(
   // Comment (list) = deals with UF_CRM_1768995573895 set, grouped by mapped string value
   const commentMap = new Map<string, number>();
   const stageSpecificFieldKey = commentListStageFieldId ?? "UF_CRM_1774442321633";
-  const stageSpecificId = commentListStageId ?? "C1:UC_6L0FQZ";
+  const stageSpecificId = (commentListStageId ?? "").trim();
   for (const d of deals) {
-    const isStageSpecific = String(d.STAGE_ID ?? "") === stageSpecificId;
+    const dealStageId = String(d.STAGE_ID ?? "").trim();
+    const isStageSpecific =
+      COMMENT_STAGE_IDS_FOR_UF_CRM_1774442321633.has(dealStageId) ||
+      (stageSpecificId !== "" && dealStageId === stageSpecificId);
     const raw = isStageSpecific
       ? (d as any)[stageSpecificFieldKey]
       : d.UF_CRM_1768995573895;
-    if (raw == null || raw === "") continue;
-    const id = String(raw);
-    const name = isStageSpecific
-      ? (commentListStageIdToName?.[id] ?? commentListIdToName?.[id] ?? id)
-      : (commentListIdToName?.[id] ?? id);
-    commentMap.set(name, (commentMap.get(name) ?? 0) + 1);
+    const ids = extractListValueIds(raw);
+    for (const id of ids) {
+      const name = isStageSpecific
+        ? (commentListStageIdToName?.[id] ?? commentListIdToName?.[id] ?? id)
+        : (commentListIdToName?.[id] ?? id);
+      commentMap.set(name, (commentMap.get(name) ?? 0) + 1);
+    }
   }
   const commentListRows: CommentListRow[] = Array.from(commentMap.entries())
     .map(([label, count]) => ({ label, count }))
