@@ -120,8 +120,8 @@ export async function GET(request: NextRequest) {
       };
     }
     return NextResponse.json({
-      result: deals,
-      total: deals.length,
+      result: dealsForCategory,
+      total: dealsForCategory.length,
       stageNameMap: stageResult.nameMap,
       allStageIdsInOrder: stageResult.stageIdsInOrder,
       sourceIdToName,
