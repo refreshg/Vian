@@ -84,13 +84,6 @@ function extractListValueIds(raw: unknown): string[] {
   return parts.length > 0 ? parts : [value];
 }
 
-const COMMENT_STAGE_IDS_FOR_UF_CRM_1774442321633 = new Set([
-  "C1:UC_6L0FQZ",
-  "C2:UC_G6FHFG",
-  "C3:UC_SRAOIM",
-  "C4:UC_PHOHBW",
-  "C5:6",
-]);
 const COMMENT_SECTION_SEPARATOR = "— UF_CRM_1774442321633 —";
 
 export function computeDashboardData(
@@ -188,15 +181,9 @@ export function computeDashboardData(
   const commentMap = new Map<string, number>();
   const stageSpecificCommentMap = new Map<string, number>();
   const stageSpecificFieldKey = commentListStageFieldId ?? "UF_CRM_1774442321633";
-  const stageSpecificId = (commentListStageId ?? "").trim();
   for (const d of deals) {
-    const dealStageId = String(d.STAGE_ID ?? "").trim();
-    const isStageSpecific =
-      COMMENT_STAGE_IDS_FOR_UF_CRM_1774442321633.has(dealStageId) ||
-      (stageSpecificId !== "" && dealStageId === stageSpecificId);
-    const stageSpecificIds = isStageSpecific
-      ? extractListValueIds((d as any)[stageSpecificFieldKey])
-      : [];
+    // Business rule: if UF_CRM_1774442321633 has a value, always use it.
+    const stageSpecificIds = extractListValueIds((d as any)[stageSpecificFieldKey]);
     if (stageSpecificIds.length > 0) {
       const uniqueStageIds = Array.from(new Set(stageSpecificIds));
       for (const id of uniqueStageIds) {

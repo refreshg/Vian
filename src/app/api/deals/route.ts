@@ -126,6 +126,12 @@ export async function GET(request: NextRequest) {
         endDate,
         countFromBitrix: deals.length,
         countReturned: dealsForCategory.length,
+        commentStageFieldNonEmpty: dealsForCategory.filter((d) => {
+          const raw = (d as any)[COMMENT_LIST_STAGE_FIELD_ID];
+          if (raw == null || raw === "") return false;
+          if (Array.isArray(raw)) return raw.some((v) => String(v ?? "").trim() !== "");
+          return String(raw).trim() !== "";
+        }).length,
       },
       stageNameMap: stageResult.nameMap,
       allStageIdsInOrder: stageResult.stageIdsInOrder,
