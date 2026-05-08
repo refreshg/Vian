@@ -55,6 +55,7 @@ export interface RejectionReasonRow {
 export interface CommentListRow {
   label: string;
   count: number;
+  isSeparator?: boolean;
 }
 
 export interface SourceGroup {
@@ -90,6 +91,7 @@ const COMMENT_STAGE_IDS_FOR_UF_CRM_1774442321633 = new Set([
   "C4:UC_PHOHBW",
   "C5:6",
 ]);
+const COMMENT_SECTION_SEPARATOR = "— UF_CRM_1774442321633 —";
 
 export function computeDashboardData(
   deals: BitrixDeal[],
@@ -184,6 +186,7 @@ export function computeDashboardData(
 
   // Comment (list) = deals with UF_CRM_1768995573895 set, grouped by mapped string value
   const commentMap = new Map<string, number>();
+  const stageSpecificCommentMap = new Map<string, number>();
   const stageSpecificFieldKey = commentListStageFieldId ?? "UF_CRM_1774442321633";
   const stageSpecificId = (commentListStageId ?? "").trim();
   for (const d of deals) {
@@ -191,21 +194,39 @@ export function computeDashboardData(
     const isStageSpecific =
       COMMENT_STAGE_IDS_FOR_UF_CRM_1774442321633.has(dealStageId) ||
       (stageSpecificId !== "" && dealStageId === stageSpecificId);
-    const primaryIds = extractListValueIds(d.UF_CRM_1768995573895);
     const stageSpecificIds = isStageSpecific
       ? extractListValueIds((d as any)[stageSpecificFieldKey])
       : [];
-    const ids = Array.from(new Set([...primaryIds, ...stageSpecificIds]));
-    for (const id of ids) {
-      const name = isStageSpecific
-        ? (commentListStageIdToName?.[id] ?? commentListIdToName?.[id] ?? id)
-        : (commentListIdToName?.[id] ?? id);
+    if (stageSpecificIds.length > 0) {
+      const uniqueStageIds = Array.from(new Set(stageSpecificIds));
+      for (const id of uniqueStageIds) {
+        const name = commentListStageIdToName?.[id] ?? commentListIdToName?.[id] ?? id;
+        stageSpecificCommentMap.set(name, (stageSpecificCommentMap.get(name) ?? 0) + 1);
+      }
+      continue;
+    }
+
+    const primaryIds = extractListValueIds(d.UF_CRM_1768995573895);
+    const uniquePrimaryIds = Array.from(new Set(primaryIds));
+    for (const id of uniquePrimaryIds) {
+      const name = commentListIdToName?.[id] ?? id;
       commentMap.set(name, (commentMap.get(name) ?? 0) + 1);
     }
   }
-  const commentListRows: CommentListRow[] = Array.from(commentMap.entries())
+  const primaryRows: CommentListRow[] = Array.from(commentMap.entries())
     .map(([label, count]) => ({ label, count }))
     .sort((a, b) => b.count - a.count);
+  const stageSpecificRows: CommentListRow[] = Array.from(stageSpecificCommentMap.entries())
+    .map(([label, count]) => ({ label: `UF_CRM_1774442321633 | ${label}`, count }))
+    .sort((a, b) => b.count - a.count);
+  const commentListRows: CommentListRow[] =
+    primaryRows.length > 0 && stageSpecificRows.length > 0
+      ? [
+          ...primaryRows,
+          { label: COMMENT_SECTION_SEPARATOR, count: 0, isSeparator: true },
+          ...stageSpecificRows,
+        ]
+      : [...primaryRows, ...stageSpecificRows];
 
   // Requests by Source: group by SOURCE_ID (mapped to name), count and source rate (%), sort by count desc
   const sourceMap = new Map<string, number>();

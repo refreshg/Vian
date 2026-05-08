@@ -8,7 +8,7 @@ interface CommentListTableProps {
 }
 
 export function CommentListTable({ rows }: CommentListTableProps) {
-  const total = rows.reduce((s, r) => s + r.count, 0);
+  const total = rows.reduce((s, r) => s + (r.isSeparator ? 0 : r.count), 0);
 
   return (
     <div className="rounded-lg border border-gray-200 bg-white overflow-hidden">
@@ -31,11 +31,31 @@ export function CommentListTable({ rows }: CommentListTableProps) {
               rows.map((row, i) => (
                 <tr
                   key={String(i) + row.label}
-                  className={i % 2 === 0 ? "bg-gray-50/50" : "bg-white"}
+                  className={
+                    row.isSeparator
+                      ? "bg-indigo-50 border-y border-indigo-100"
+                      : i % 2 === 0
+                        ? "bg-gray-50/50"
+                        : "bg-white"
+                  }
                 >
-                  <td className="px-4 py-2.5 text-gray-900">{row.label}</td>
-                  <td className="px-4 py-2.5 text-right text-gray-700">
-                    {row.count}
+                  <td
+                    className={
+                      row.isSeparator
+                        ? "px-4 py-2 text-xs font-semibold uppercase tracking-wide text-indigo-700"
+                        : "px-4 py-2.5 text-gray-900"
+                    }
+                  >
+                    {row.label}
+                  </td>
+                  <td
+                    className={
+                      row.isSeparator
+                        ? "px-4 py-2 text-right text-indigo-700"
+                        : "px-4 py-2.5 text-right text-gray-700"
+                    }
+                  >
+                    {row.isSeparator ? "—" : row.count}
                   </td>
                 </tr>
               ))
