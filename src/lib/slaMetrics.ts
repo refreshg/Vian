@@ -87,6 +87,7 @@ const PHRASE_INITIAL = "Coordinator did not start";
 const PHRASE_FOLLOW_UP = "Follow up in 24 Hours";
 const PHRASE_FOLLOW_UP_MONTHS = "Follow up in Months";
 const PHRASE_CONTACT_SUCCESSFUL = "Contact was Successful";
+const PHRASE_ACTIVE_COMMUNICATION = "Active communication";
 const PRICE_SHARING_STAGE_IDS = new Set<string>([
   "C1:UC_Y4KFLS", // Category 1
   "C2:UC_LT5MYB", // Category 2
@@ -228,6 +229,10 @@ export function computeSlaMetrics(
     stageIdToName,
     PHRASE_FOLLOW_UP_MONTHS
   );
+  const activeCommunicationStageIds = stageIdsMatchingName(
+    stageIdToName,
+    PHRASE_ACTIVE_COMMUNICATION
+  );
 
   const isInitialStage = (sid: string) => initialStageIds.has(sid);
   const isFollowUpStage = (sid: string) => followUpStageIds.has(sid);
@@ -236,6 +241,8 @@ export function computeSlaMetrics(
     contactSuccessfulStageIds.has(sid);
   const isFollowUpMonthsStage = (sid: string) =>
     followUpMonthsStageIds.has(sid);
+  const isActiveCommunicationStage = (sid: string) =>
+    activeCommunicationStageIds.has(sid);
   const isPriceSharingStage = (sid: string) => PRICE_SHARING_STAGE_IDS.has(sid);
 
 
@@ -388,7 +395,7 @@ export function computeSlaMetrics(
     if (sameMonth) followMonthsOnTime += 1;
   }
 
-  // —— C. Price Sharing (< 24 hours from pipeline-specific Price Sharing stage to next event or now) ——
+  // —— C. Price Sharing (<= 24 hours from Active communication to Price Sharing stage) ——
   let priceOnTime = 0;
   let priceTotal = 0;
   const priceSharingDebug: Array<{
@@ -409,36 +416,50 @@ export function computeSlaMetrics(
     );
     if (entryIndex === -1) continue;
     priceTotal += 1;
-    const entryMs = parseTimeMs(events[entryIndex].CREATED_TIME);
-    if (!Number.isFinite(entryMs)) continue;
-    const nextEvent = events[entryIndex + 1];
-    const endMs = nextEvent
-      ? parseTimeMs(nextEvent.CREATED_TIME)
-      : Date.now();
-    const endMsSafe = Number.isFinite(endMs) ? endMs : Date.now();
-    const diffMs = endMsSafe - entryMs;
-    const diffHours = diffMs / (1000 * 60 * 60);
-    const diffBusinessHours = businessHoursBetween(entryMs, endMsSafe, businessHours);
-    const isOnTime = diffBusinessHours * ONE_HOUR_MS <= TWENTY_FOUR_HOURS_MS;
+    const priceEntryMs = parseTimeMs(events[entryIndex].CREATED_TIME);
+    if (!Number.isFinite(priceEntryMs)) continue;
     const enteredAt = String(events[entryIndex].CREATED_TIME ?? "");
-    const exitedAt = nextEvent
-      ? String(nextEvent.CREATED_TIME ?? "")
-      : "Still in stage";
+    const activeCommunicationEvent = events
+      .slice(0, entryIndex)
+      .reverse()
+      .find((e) => isActiveCommunicationStage(stageId(e.STAGE_ID)));
+    const activeCommunicationMs = activeCommunicationEvent
+      ? parseTimeMs(activeCommunicationEvent.CREATED_TIME)
+      : NaN;
+    const activeCommunicationAt = activeCommunicationEvent
+      ? String(activeCommunicationEvent.CREATED_TIME ?? "")
+      : "Not found";
+    const diffMs = Number.isFinite(activeCommunicationMs)
+      ? priceEntryMs - activeCommunicationMs
+      : NaN;
+    const diffHours = Number.isFinite(diffMs) ? diffMs / ONE_HOUR_MS : NaN;
+    const diffBusinessHours = Number.isFinite(activeCommunicationMs)
+      ? businessHoursBetween(activeCommunicationMs, priceEntryMs, businessHours)
+      : NaN;
+    const isOnTime =
+      Number.isFinite(activeCommunicationMs) &&
+      diffBusinessHours * ONE_HOUR_MS <= TWENTY_FOUR_HOURS_MS;
     priceSharingDebug.push({
       Deal_ID: dealId,
-      Entered_Stage_At: enteredAt,
-      Exited_Stage_At: exitedAt,
-      Calculated_Hours: Math.round(diffHours * 100) / 100,
-      Calculated_Business_Hours: Math.round(diffBusinessHours * 100) / 100,
+      Entered_Stage_At: activeCommunicationAt,
+      Exited_Stage_At: enteredAt,
+      Calculated_Hours: Number.isFinite(diffHours)
+        ? Math.round(diffHours * 100) / 100
+        : NaN,
+      Calculated_Business_Hours: Number.isFinite(diffBusinessHours)
+        ? Math.round(diffBusinessHours * 100) / 100
+        : NaN,
       Is_On_Time: isOnTime,
     });
     if (options?.priceSharingDebugOut) {
       options.priceSharingDebugOut.push({
         dealId,
-        entryTime: enteredAt,
-        exitTime: nextEvent ? exitedAt : new Date(endMsSafe).toISOString(),
-        diffHours,
-        diffBusinessHours,
+        entryTime: activeCommunicationAt,
+        exitTime: enteredAt,
+        diffHours: Number.isFinite(diffHours) ? diffHours : NaN,
+        diffBusinessHours: Number.isFinite(diffBusinessHours)
+          ? diffBusinessHours
+          : undefined,
         isOnTime,
       });
     }
