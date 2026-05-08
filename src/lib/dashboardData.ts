@@ -72,8 +72,28 @@ export interface CountryGroup {
 
 function extractListValueIds(raw: unknown): string[] {
   if (raw == null || raw === "") return [];
+  if (typeof raw === "object" && !Array.isArray(raw)) {
+    const rec = raw as Record<string, unknown>;
+    const objectValueCandidates = [
+      rec.VALUE,
+      rec.value,
+      rec.ID,
+      rec.id,
+      rec.NAME,
+      rec.name,
+    ];
+    for (const candidate of objectValueCandidates) {
+      if (candidate == null || candidate === "") continue;
+      const parsed = extractListValueIds(candidate);
+      if (parsed.length > 0) return parsed;
+    }
+    return [];
+  }
   if (Array.isArray(raw)) {
-    return raw.map((v) => String(v ?? "").trim()).filter(Boolean);
+    return raw
+      .flatMap((v) => extractListValueIds(v))
+      .map((v) => String(v ?? "").trim())
+      .filter(Boolean);
   }
   const value = String(raw).trim();
   if (!value) return [];
