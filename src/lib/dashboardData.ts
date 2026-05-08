@@ -55,7 +55,6 @@ export interface RejectionReasonRow {
 export interface CommentListRow {
   label: string;
   count: number;
-  isSeparator?: boolean;
 }
 
 export interface SourceGroup {
@@ -104,8 +103,6 @@ function extractListValueIds(raw: unknown): string[] {
   return parts.length > 0 ? parts : [value];
 }
 
-const COMMENT_SECTION_SEPARATOR = "— Reasons for Communication Loss —";
-
 export function computeDashboardData(
   deals: BitrixDeal[],
   stageIdToName?: Record<string, string>,
@@ -124,7 +121,7 @@ export function computeDashboardData(
   stageGroups: StageGroup[];
   departmentGroups: DepartmentGroup[];
   rejectionReasons: RejectionReasonRow[];
-  commentListRows: CommentListRow[];
+  reasonsForCommunicationLossRows: CommentListRow[];
   sourceGroups: SourceGroup[];
   countryGroups: CountryGroup[];
 } {
@@ -197,8 +194,8 @@ export function computeDashboardData(
     .map(([reason, count]) => ({ reason, count }))
     .sort((a, b) => b.count - a.count);
 
-  // Comment (list) = deals with UF_CRM_1768995573895 set, grouped by mapped string value
-  const commentMap = new Map<string, number>();
+  // Reasons for communication loss of qualified leads:
+  // only values from UF_CRM_1774442321633.
   const stageSpecificCommentMap = new Map<string, number>();
   const stageSpecificFieldKey = commentListStageFieldId ?? "UF_CRM_1774442321633";
   for (const d of deals) {
@@ -210,30 +207,11 @@ export function computeDashboardData(
         const name = commentListStageIdToName?.[id] ?? commentListIdToName?.[id] ?? id;
         stageSpecificCommentMap.set(name, (stageSpecificCommentMap.get(name) ?? 0) + 1);
       }
-      continue;
-    }
-
-    const primaryIds = extractListValueIds(d.UF_CRM_1768995573895);
-    const uniquePrimaryIds = Array.from(new Set(primaryIds));
-    for (const id of uniquePrimaryIds) {
-      const name = commentListIdToName?.[id] ?? id;
-      commentMap.set(name, (commentMap.get(name) ?? 0) + 1);
     }
   }
-  const primaryRows: CommentListRow[] = Array.from(commentMap.entries())
+  const reasonsForCommunicationLossRows: CommentListRow[] = Array.from(stageSpecificCommentMap.entries())
     .map(([label, count]) => ({ label, count }))
     .sort((a, b) => b.count - a.count);
-  const stageSpecificRows: CommentListRow[] = Array.from(stageSpecificCommentMap.entries())
-    .map(([label, count]) => ({ label, count }))
-    .sort((a, b) => b.count - a.count);
-  const commentListRows: CommentListRow[] =
-    primaryRows.length > 0 && stageSpecificRows.length > 0
-      ? [
-          ...primaryRows,
-          { label: COMMENT_SECTION_SEPARATOR, count: 0, isSeparator: true },
-          ...stageSpecificRows,
-        ]
-      : [...primaryRows, ...stageSpecificRows];
 
   // Requests by Source: group by SOURCE_ID (mapped to name), count and source rate (%), sort by count desc
   const sourceMap = new Map<string, number>();
@@ -282,7 +260,7 @@ export function computeDashboardData(
     stageGroups,
     departmentGroups,
     rejectionReasons,
-    commentListRows,
+    reasonsForCommunicationLossRows,
     sourceGroups,
     countryGroups,
   };

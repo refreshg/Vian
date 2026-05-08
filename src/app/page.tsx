@@ -300,7 +300,10 @@ export default function DashboardPage() {
               <div className="flex flex-col gap-6">
                 <RequestsByStageDonut stageGroups={dashboard.stageGroups} />
                 <RejectionReasonsTable rows={dashboard.rejectionReasons} />
-                <CommentListTable rows={dashboard.commentListRows} />
+                <CommentListTable
+                  rows={dashboard.reasonsForCommunicationLossRows}
+                  title="Reasons for communication loss of qualified leads"
+                />
               </div>
               {/* Right column */}
               <div className="flex flex-col gap-6">

@@ -5,16 +5,20 @@ import type { CommentListRow } from "@/lib/dashboardData";
 
 interface CommentListTableProps {
   rows: CommentListRow[];
+  title?: string;
 }
 
-export function CommentListTable({ rows }: CommentListTableProps) {
-  const total = rows.reduce((s, r) => s + (r.isSeparator ? 0 : r.count), 0);
+export function CommentListTable({
+  rows,
+  title = "Reasons for communication loss of qualified leads",
+}: CommentListTableProps) {
+  const total = rows.reduce((s, r) => s + r.count, 0);
 
   return (
     <div className="rounded-lg border border-gray-200 bg-white overflow-hidden">
       <div className="flex items-center justify-between border-b border-gray-200 px-4 py-3">
         <h2 className="text-base font-medium text-gray-900">
-          Comment (list)
+          {title}
         </h2>
         <span className="text-sm text-gray-500">Requests</span>
       </div>
@@ -31,31 +35,13 @@ export function CommentListTable({ rows }: CommentListTableProps) {
               rows.map((row, i) => (
                 <tr
                   key={String(i) + row.label}
-                  className={
-                    row.isSeparator
-                      ? "bg-indigo-50 border-y border-indigo-100"
-                      : i % 2 === 0
-                        ? "bg-gray-50/50"
-                        : "bg-white"
-                  }
+                  className={i % 2 === 0 ? "bg-gray-50/50" : "bg-white"}
                 >
-                  <td
-                    className={
-                      row.isSeparator
-                        ? "px-4 py-2 text-xs font-semibold uppercase tracking-wide text-indigo-700"
-                        : "px-4 py-2.5 text-gray-900"
-                    }
-                  >
+                  <td className="px-4 py-2.5 text-gray-900">
                     {row.label}
                   </td>
-                  <td
-                    className={
-                      row.isSeparator
-                        ? "px-4 py-2 text-right text-indigo-700"
-                        : "px-4 py-2.5 text-right text-gray-700"
-                    }
-                  >
-                    {row.isSeparator ? "—" : row.count}
+                  <td className="px-4 py-2.5 text-right text-gray-700">
+                    {row.count}
                   </td>
                 </tr>
               ))
