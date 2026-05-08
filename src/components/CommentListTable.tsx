@@ -10,7 +10,7 @@ interface CommentListTableProps {
 
 export function CommentListTable({
   rows,
-  title = "Reasons for communication loss of qualified leads",
+  title = "Reasons for loss of communication with qualified leads",
 }: CommentListTableProps) {
   const total = rows.reduce((s, r) => s + r.count, 0);
 

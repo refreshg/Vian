@@ -19,6 +19,7 @@ const COMMENT_LIST_STAGE_FIELD_ID = "UF_CRM_1774442321633";
 const COMMENT_LIST_STAGE_ID = "C1:UC_6L0FQZ";
 const COUNTRY_FIELD_ID = "UF_CRM_1769688668259";
 const FOLLOW_UP_OVERRIDE_FIELD_ID = "UF_CRM_1774537634447";
+const PRICE_SHARING_STAGE_PHRASE = "offer finalization for patient";
 
 export async function GET(request: NextRequest) {
   const searchParams = request.nextUrl.searchParams;
@@ -117,6 +118,19 @@ export async function GET(request: NextRequest) {
         priceSharing: { title: "Price sharing to Patient on Time", onTimeCount: 0, totalCount: 0, rate: 0 },
       };
     }
+
+    const priceSharingStageIds = Object.entries(stageResult?.nameMap ?? {})
+      .filter(([, name]) =>
+        String(name ?? "")
+          .toLowerCase()
+          .includes(PRICE_SHARING_STAGE_PHRASE)
+      )
+      .map(([id]) => id);
+    const priceSharingStageIdSet = new Set(priceSharingStageIds);
+    const dealsCurrentlyInPriceSharing = dealsForCategory.filter((d) =>
+      priceSharingStageIdSet.has(String(d.STAGE_ID ?? ""))
+    );
+
     return NextResponse.json({
       result: dealsForCategory,
       total: dealsForCategory.length,
@@ -161,6 +175,23 @@ export async function GET(request: NextRequest) {
       countryIdToName,
       slaMetrics,
       priceSharingDebug,
+      priceSharingValidationDebug: {
+        stagePhrase: PRICE_SHARING_STAGE_PHRASE,
+        matchedStageIds: priceSharingStageIds,
+        matchedStageNames: priceSharingStageIds.map(
+          (id) => stageResult?.nameMap?.[id] ?? id
+        ),
+        dealsCurrentlyInMatchedStagesCount: dealsCurrentlyInPriceSharing.length,
+        sampleDealsCurrentlyInMatchedStages: dealsCurrentlyInPriceSharing
+          .slice(0, 15)
+          .map((d) => ({
+            id: String(d.ID ?? ""),
+            stageId: String(d.STAGE_ID ?? ""),
+            stageName: stageResult?.nameMap?.[String(d.STAGE_ID ?? "")] ?? String(d.STAGE_ID ?? ""),
+          })),
+        priceSharingMetricTotalCount: slaMetrics?.priceSharing?.totalCount ?? 0,
+        priceSharingMetricOnTimeCount: slaMetrics?.priceSharing?.onTimeCount ?? 0,
+      },
     });
   } catch (err) {
     const message = err instanceof Error ? err.message : "Failed to fetch deals";

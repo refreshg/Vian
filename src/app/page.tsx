@@ -110,6 +110,12 @@ export default function DashboardPage() {
       if (data.commentFieldDebug) {
         console.log("🧪 COMMENT FIELD DEBUG:", data.commentFieldDebug);
       }
+      if (data.priceSharingValidationDebug) {
+        console.log(
+          "🧪 PRICE SHARING VALIDATION DEBUG:",
+          data.priceSharingValidationDebug
+        );
+      }
     } catch (e) {
       setError(e instanceof Error ? e.message : "Something went wrong");
       setDeals([]);
@@ -302,7 +308,7 @@ export default function DashboardPage() {
                 <RejectionReasonsTable rows={dashboard.rejectionReasons} />
                 <CommentListTable
                   rows={dashboard.reasonsForCommunicationLossRows}
-                  title="Reasons for communication loss of qualified leads"
+                  title="Reasons for loss of communication with qualified leads"
                 />
               </div>
               {/* Right column */}
