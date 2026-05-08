@@ -87,7 +87,13 @@ const PHRASE_INITIAL = "Coordinator did not start";
 const PHRASE_FOLLOW_UP = "Follow up in 24 Hours";
 const PHRASE_FOLLOW_UP_MONTHS = "Follow up in Months";
 const PHRASE_CONTACT_SUCCESSFUL = "Contact was Successful";
-const PHRASE_PRICE_SHARING = "Offer Finalization for Patient";
+const PRICE_SHARING_STAGE_IDS = new Set<string>([
+  "C1:UC_Y4KFLS", // Category 1
+  "C2:UC_LT5MYB", // Category 2
+  "C3:UC_XKQDFU", // Category 3
+  "C4:UC_COEU6V", // Category 4
+  "C5:UC_OFCRM2", // Category 5
+]);
 
 /** Return stage IDs whose human-readable name contains the given phrase (case-insensitive). */
 function stageIdsMatchingName(
@@ -222,10 +228,6 @@ export function computeSlaMetrics(
     stageIdToName,
     PHRASE_FOLLOW_UP_MONTHS
   );
-  const priceSharingStageIds = stageIdsMatchingName(
-    stageIdToName,
-    PHRASE_PRICE_SHARING
-  );
 
   const isInitialStage = (sid: string) => initialStageIds.has(sid);
   const isFollowUpStage = (sid: string) => followUpStageIds.has(sid);
@@ -234,7 +236,7 @@ export function computeSlaMetrics(
     contactSuccessfulStageIds.has(sid);
   const isFollowUpMonthsStage = (sid: string) =>
     followUpMonthsStageIds.has(sid);
-  const isPriceSharingStage = (sid: string) => priceSharingStageIds.has(sid);
+  const isPriceSharingStage = (sid: string) => PRICE_SHARING_STAGE_IDS.has(sid);
 
 
   // —— A. First Communication (<= 1 calendar hour from DATE_CREATE to first move out of initial stage) ——
@@ -386,7 +388,7 @@ export function computeSlaMetrics(
     if (sameMonth) followMonthsOnTime += 1;
   }
 
-  // —— C. Price Sharing (< 24 hours from entry into "Offer Finalization for Patient" to next event or now) ——
+  // —— C. Price Sharing (< 24 hours from pipeline-specific Price Sharing stage to next event or now) ——
   let priceOnTime = 0;
   let priceTotal = 0;
   const priceSharingDebug: Array<{
