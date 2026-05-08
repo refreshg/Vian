@@ -440,7 +440,7 @@ export async function fetchDealList(params: {
       "UF_CRM_1774537634447",
     ],
     FILTER: filter,
-    ORDER: { DATE_CREATE: "DESC" },
+    ORDER: { DATE_CREATE: "DESC", ID: "DESC" },
   };
 
   const response = await fetch(endpoint, {
@@ -550,7 +550,7 @@ export async function fetchAllDealsInRange(params: {
     const body: Record<string, unknown> = {
       SELECT,
       FILTER: filter,
-      ORDER: { DATE_CREATE: "DESC" },
+      ORDER: { DATE_CREATE: "DESC", ID: "DESC" },
       start,
     };
 

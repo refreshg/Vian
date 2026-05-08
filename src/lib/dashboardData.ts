@@ -191,10 +191,11 @@ export function computeDashboardData(
     const isStageSpecific =
       COMMENT_STAGE_IDS_FOR_UF_CRM_1774442321633.has(dealStageId) ||
       (stageSpecificId !== "" && dealStageId === stageSpecificId);
-    const raw = isStageSpecific
-      ? (d as any)[stageSpecificFieldKey]
-      : d.UF_CRM_1768995573895;
-    const ids = extractListValueIds(raw);
+    const primaryIds = extractListValueIds(d.UF_CRM_1768995573895);
+    const stageSpecificIds = isStageSpecific
+      ? extractListValueIds((d as any)[stageSpecificFieldKey])
+      : [];
+    const ids = Array.from(new Set([...primaryIds, ...stageSpecificIds]));
     for (const id of ids) {
       const name = isStageSpecific
         ? (commentListStageIdToName?.[id] ?? commentListIdToName?.[id] ?? id)
