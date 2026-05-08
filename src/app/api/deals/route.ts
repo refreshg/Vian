@@ -120,18 +120,33 @@ export async function GET(request: NextRequest) {
     return NextResponse.json({
       result: dealsForCategory,
       total: dealsForCategory.length,
-      debugCount: {
+      commentFieldDebug: {
         category,
         startDate,
         endDate,
-        countFromBitrix: deals.length,
-        countReturned: dealsForCategory.length,
-        commentStageFieldNonEmpty: dealsForCategory.filter((d) => {
+        totalDeals: dealsForCategory.length,
+        nonEmptyCommentStageFieldDeals: dealsForCategory.filter((d) => {
           const raw = (d as any)[COMMENT_LIST_STAGE_FIELD_ID];
           if (raw == null || raw === "") return false;
           if (Array.isArray(raw)) return raw.some((v) => String(v ?? "").trim() !== "");
+          if (typeof raw === "object") return Object.keys(raw as Record<string, unknown>).length > 0;
           return String(raw).trim() !== "";
         }).length,
+        fieldOptionsSample: Object.entries(commentListStageIdToName).slice(0, 10),
+        dealsWithFieldSample: dealsForCategory
+          .filter((d) => {
+            const raw = (d as any)[COMMENT_LIST_STAGE_FIELD_ID];
+            if (raw == null || raw === "") return false;
+            if (Array.isArray(raw)) return raw.some((v) => String(v ?? "").trim() !== "");
+            if (typeof raw === "object") return Object.keys(raw as Record<string, unknown>).length > 0;
+            return String(raw).trim() !== "";
+          })
+          .slice(0, 15)
+          .map((d) => ({
+            id: String(d.ID ?? ""),
+            stage: String(d.STAGE_ID ?? ""),
+            rawValue: (d as any)[COMMENT_LIST_STAGE_FIELD_ID],
+          })),
       },
       stageNameMap: stageResult.nameMap,
       allStageIdsInOrder: stageResult.stageIdsInOrder,
@@ -146,8 +161,6 @@ export async function GET(request: NextRequest) {
       countryIdToName,
       slaMetrics,
       priceSharingDebug,
-      firstCommDebug,
-      followUpMonthsDebug,
     });
   } catch (err) {
     const message = err instanceof Error ? err.message : "Failed to fetch deals";

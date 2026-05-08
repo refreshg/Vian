@@ -107,14 +107,8 @@ export default function DashboardPage() {
       setSourceIdToName(data.sourceIdToName ?? {});
       setCountryIdToName(data.countryIdToName ?? {});
       setSlaMetrics(data.slaMetrics ?? null);
-      if (Array.isArray(data.firstCommDebug)) {
-        console.log("🚨 FIRST COMM VERIFICATION (24/7):", data.firstCommDebug);
-      }
-      if (Array.isArray(data.followUpMonthsDebug)) {
-        console.log("🗓️ FOLLOW UP MONTHS DEBUG:", data.followUpMonthsDebug);
-      }
-      if (data.debugCount) {
-        console.log("📊 DEAL COUNT DEBUG:", data.debugCount);
+      if (data.commentFieldDebug) {
+        console.log("🧪 COMMENT FIELD DEBUG:", data.commentFieldDebug);
       }
     } catch (e) {
       setError(e instanceof Error ? e.message : "Something went wrong");

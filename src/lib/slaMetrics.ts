@@ -197,7 +197,6 @@ export function computeSlaMetrics(
     businessHours?: Partial<BusinessHoursConfig>;
   }
 ): SlaSummary {
-  console.log("🚀 SLA Metrics calculation started...");
   const safeDeals = Array.isArray(deals) ? deals : [];
   const businessHours: BusinessHoursConfig = {
     workdayStartHour:
@@ -237,14 +236,6 @@ export function computeSlaMetrics(
     followUpMonthsStageIds.has(sid);
   const isPriceSharingStage = (sid: string) => priceSharingStageIds.has(sid);
 
-  // Debug: verify stage detection for Follow up in Months
-  if (process.env.NODE_ENV !== "production") {
-    console.log("🧩 SLA stage match counts:", {
-      followUpMonthsStageIds: followUpMonthsStageIds.size,
-      followUpDayStageIds: followUpDayStageIds.size,
-      contactSuccessfulStageIds: contactSuccessfulStageIds.size,
-    });
-  }
 
   // —— A. First Communication (<= 1 calendar hour from DATE_CREATE to first move out of initial stage) ——
   // First transition to ANY stage strictly different from initial. Ignore creation-moment assignment (event time must be > createMs).
@@ -452,7 +443,6 @@ export function computeSlaMetrics(
     if (isOnTime) priceOnTime += 1;
   }
 
-  console.log("🚨 FIRST COMM VERIFICATION (24/7):", firstCommDebug);
   if (options?.firstCommDebugOut) {
     options.firstCommDebugOut.push(...firstCommDebug);
   }
