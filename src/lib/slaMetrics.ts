@@ -20,6 +20,7 @@ export interface PriceSharingDebugRow {
   entryTime: string;
   exitTime: string;
   diffHours: number;
+  diffBusinessHours?: number;
   isOnTime: boolean;
 }
 
@@ -31,6 +32,54 @@ function calendarHoursBetween(startMs: number, endMs: number): number {
   if (!Number.isFinite(startMs) || !Number.isFinite(endMs) || endMs <= startMs)
     return 0;
   return (endMs - startMs) / ONE_HOUR_MS;
+}
+
+interface BusinessHoursConfig {
+  workdayStartHour: number;
+  workdayEndHour: number;
+}
+
+const DEFAULT_BUSINESS_HOURS: BusinessHoursConfig = {
+  workdayStartHour: 0,
+  workdayEndHour: 18,
+};
+
+function isWeekend(date: Date): boolean {
+  const day = date.getDay();
+  return day === 0 || day === 6;
+}
+
+function businessHoursBetween(
+  startMs: number,
+  endMs: number,
+  businessHours: BusinessHoursConfig
+): number {
+  if (!Number.isFinite(startMs) || !Number.isFinite(endMs) || endMs <= startMs) {
+    return 0;
+  }
+  const { workdayStartHour, workdayEndHour } = businessHours;
+  if (workdayEndHour <= workdayStartHour) return 0;
+
+  let totalMs = 0;
+  const cursor = new Date(startMs);
+  cursor.setHours(0, 0, 0, 0);
+  const endDate = new Date(endMs);
+  endDate.setHours(0, 0, 0, 0);
+
+  while (cursor.getTime() <= endDate.getTime()) {
+    if (!isWeekend(cursor)) {
+      const dayStart = new Date(cursor);
+      dayStart.setHours(workdayStartHour, 0, 0, 0);
+      const dayEnd = new Date(cursor);
+      dayEnd.setHours(workdayEndHour, 0, 0, 0);
+      const segStart = Math.max(startMs, dayStart.getTime());
+      const segEnd = Math.min(endMs, dayEnd.getTime());
+      if (segEnd > segStart) totalMs += segEnd - segStart;
+    }
+    cursor.setDate(cursor.getDate() + 1);
+  }
+
+  return totalMs / ONE_HOUR_MS;
 }
 
 /** Stage name phrases for multi-pipeline SLA (stage IDs differ per pipeline, e.g. C1:NEW vs C2:NEW). */
@@ -145,10 +194,19 @@ export function computeSlaMetrics(
     firstCommDebugOut?: any[];
     followUpOverrideIdToName?: Record<string, string>;
     followUpMonthsDebugOut?: any[];
+    businessHours?: Partial<BusinessHoursConfig>;
   }
 ): SlaSummary {
   console.log("🚀 SLA Metrics calculation started...");
   const safeDeals = Array.isArray(deals) ? deals : [];
+  const businessHours: BusinessHoursConfig = {
+    workdayStartHour:
+      options?.businessHours?.workdayStartHour ??
+      DEFAULT_BUSINESS_HOURS.workdayStartHour,
+    workdayEndHour:
+      options?.businessHours?.workdayEndHour ??
+      DEFAULT_BUSINESS_HOURS.workdayEndHour,
+  };
   const historyMap = buildHistoryMap(histories);
 
   const initialStageIds = buildInitialStageIds(stageIdToName);
@@ -227,7 +285,8 @@ export function computeSlaMetrics(
       : nowMs;
     const endMsSafe = Number.isFinite(endMs) ? endMs : nowMs;
     const diffHours = calendarHoursBetween(createMs, endMsSafe);
-    const isOnTime = diffHours <= FIRST_COMMUNICATION_LIMIT_HOURS;
+    const diffBusinessHours = businessHoursBetween(createMs, endMsSafe, businessHours);
+    const isOnTime = diffBusinessHours <= FIRST_COMMUNICATION_LIMIT_HOURS;
     firstTotal += 1;
     if (isOnTime) firstOnTime += 1;
     const triggerStageLabel =
@@ -240,6 +299,7 @@ export function computeSlaMetrics(
       Trigger_Stage: triggerStageLabel,
       First_Comm_At: firstCommEnteredAt ?? "PENDING",
       Calculated_Hours: Math.round(diffHours * 100) / 100,
+      Calculated_Business_Hours: Math.round(diffBusinessHours * 100) / 100,
       Is_On_Time: isOnTime,
     });
   }
@@ -299,13 +359,14 @@ export function computeSlaMetrics(
     if (!successEvent) continue;
     const successMs = parseTimeMs(successEvent.CREATED_TIME);
     if (!Number.isFinite(successMs)) continue;
-    const diffMs = successMs - entryMs;
-    if (diffMs <= FIVE_DAYS_MS) followOnTime += 1;
+    const diffBusinessHours = businessHoursBetween(entryMs, successMs, businessHours);
+    if (diffBusinessHours * ONE_HOUR_MS <= FIVE_DAYS_MS) followOnTime += 1;
   }
 
   // —— B2. Follow-up in Months on Time ——
   // Qualifying: entered "Follow up in Months".
   // On-time: entry happened within the same calendar month as deal creation.
+  // This metric stays month-based; business-hour exclusions are not applicable.
   // Override: UF_CRM_1774537634447 = yes → on-time regardless.
   let followMonthsOnTime = 0;
   let followMonthsTotal = 0;
@@ -342,6 +403,7 @@ export function computeSlaMetrics(
     Entered_Stage_At: string;
     Exited_Stage_At: string;
     Calculated_Hours: number;
+    Calculated_Business_Hours: number;
     Is_On_Time: boolean;
   }> = [];
   for (const deal of safeDeals) {
@@ -363,7 +425,8 @@ export function computeSlaMetrics(
     const endMsSafe = Number.isFinite(endMs) ? endMs : Date.now();
     const diffMs = endMsSafe - entryMs;
     const diffHours = diffMs / (1000 * 60 * 60);
-    const isOnTime = diffMs <= TWENTY_FOUR_HOURS_MS;
+    const diffBusinessHours = businessHoursBetween(entryMs, endMsSafe, businessHours);
+    const isOnTime = diffBusinessHours * ONE_HOUR_MS <= TWENTY_FOUR_HOURS_MS;
     const enteredAt = String(events[entryIndex].CREATED_TIME ?? "");
     const exitedAt = nextEvent
       ? String(nextEvent.CREATED_TIME ?? "")
@@ -373,6 +436,7 @@ export function computeSlaMetrics(
       Entered_Stage_At: enteredAt,
       Exited_Stage_At: exitedAt,
       Calculated_Hours: Math.round(diffHours * 100) / 100,
+      Calculated_Business_Hours: Math.round(diffBusinessHours * 100) / 100,
       Is_On_Time: isOnTime,
     });
     if (options?.priceSharingDebugOut) {
@@ -381,6 +445,7 @@ export function computeSlaMetrics(
         entryTime: enteredAt,
         exitTime: nextEvent ? exitedAt : new Date(endMsSafe).toISOString(),
         diffHours,
+        diffBusinessHours,
         isOnTime,
       });
     }

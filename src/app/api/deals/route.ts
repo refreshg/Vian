@@ -15,6 +15,8 @@ const REJECTION_REASONS_FIELD_ID = "UF_CRM_1753862633986";
 /** Rejection reasons field for Pipeline 3 (Iv.Bokeria University Hospital) */
 const REJECTION_REASONS_FIELD_ID_PIPELINE_3 = "UF_CRM_1753861857976";
 const COMMENT_LIST_FIELD_ID = "UF_CRM_1768995573895";
+const COMMENT_LIST_STAGE_FIELD_ID = "UF_CRM_1774442321633";
+const COMMENT_LIST_STAGE_ID = "C1:UC_6L0FQZ";
 const COUNTRY_FIELD_ID = "UF_CRM_1769688668259";
 const FOLLOW_UP_OVERRIDE_FIELD_ID = "UF_CRM_1774537634447";
 
@@ -74,6 +76,7 @@ export async function GET(request: NextRequest) {
       departmentIdToName,
       rejectionReasonIdToName,
       commentListIdToName,
+      commentListStageIdToName,
       countryIdToName,
       followUpOverrideIdToName,
     ] = await Promise.all([
@@ -82,6 +85,7 @@ export async function GET(request: NextRequest) {
       fetchDealFieldOptions(DEPARTMENT_FIELD_ID),
       fetchDealFieldOptions(rejectionReasonsFieldId),
       fetchDealFieldOptions(COMMENT_LIST_FIELD_ID),
+      fetchDealFieldOptions(COMMENT_LIST_STAGE_FIELD_ID),
       fetchDealFieldOptions(COUNTRY_FIELD_ID),
       fetchDealFieldOptions(FOLLOW_UP_OVERRIDE_FIELD_ID),
     ]);
@@ -101,6 +105,10 @@ export async function GET(request: NextRequest) {
           firstCommDebugOut: firstCommDebug,
           followUpOverrideIdToName,
           followUpMonthsDebugOut: followUpMonthsDebug,
+          businessHours: {
+            workdayStartHour: 0,
+            workdayEndHour: 18,
+          },
         }
       );
     } catch {
@@ -121,6 +129,9 @@ export async function GET(request: NextRequest) {
       rejectionReasonIdToName,
       rejectionReasonFieldId: rejectionReasonsFieldId,
       commentListIdToName,
+      commentListStageIdToName,
+      commentListStageId: COMMENT_LIST_STAGE_ID,
+      commentListStageFieldId: COMMENT_LIST_STAGE_FIELD_ID,
       countryIdToName,
       slaMetrics,
       priceSharingDebug,

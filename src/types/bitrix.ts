@@ -16,6 +16,8 @@ export interface BitrixDeal {
   UF_CRM_1753861857976?: string | number;
   /** Comment (list) dropdown – UF_CRM_1768995573895 */
   UF_CRM_1768995573895?: string | number;
+  /** Comment (list) dropdown for stage C1:UC_6L0FQZ – UF_CRM_1774442321633 */
+  UF_CRM_1774442321633?: string | number;
   /** Country dropdown – UF_CRM_1769688668259 */
   UF_CRM_1769688668259?: string | number;
   /** Follow-up on-time override dropdown – UF_CRM_1774537634447 */

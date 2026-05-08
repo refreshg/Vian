@@ -61,6 +61,15 @@ export default function DashboardPage() {
   const [commentListIdToName, setCommentListIdToName] = useState<
     Record<string, string>
   >({});
+  const [commentListStageIdToName, setCommentListStageIdToName] = useState<
+    Record<string, string>
+  >({});
+  const [commentListStageId, setCommentListStageId] = useState<string | undefined>(
+    undefined
+  );
+  const [commentListStageFieldId, setCommentListStageFieldId] = useState<
+    string | undefined
+  >(undefined);
   const [sourceIdToName, setSourceIdToName] = useState<
     Record<string, string>
   >({});
@@ -92,6 +101,9 @@ export default function DashboardPage() {
       setRejectionReasonIdToName(data.rejectionReasonIdToName ?? {});
       setRejectionReasonFieldId(data.rejectionReasonFieldId);
       setCommentListIdToName(data.commentListIdToName ?? {});
+      setCommentListStageIdToName(data.commentListStageIdToName ?? {});
+      setCommentListStageId(data.commentListStageId);
+      setCommentListStageFieldId(data.commentListStageFieldId);
       setSourceIdToName(data.sourceIdToName ?? {});
       setCountryIdToName(data.countryIdToName ?? {});
       setSlaMetrics(data.slaMetrics ?? null);
@@ -110,6 +122,9 @@ export default function DashboardPage() {
       setRejectionReasonIdToName({});
       setRejectionReasonFieldId(undefined);
       setCommentListIdToName({});
+      setCommentListStageIdToName({});
+      setCommentListStageId(undefined);
+      setCommentListStageFieldId(undefined);
       setSourceIdToName({});
       setCountryIdToName({});
       setSlaMetrics(null);
@@ -187,6 +202,9 @@ export default function DashboardPage() {
     rejectionReasonIdToName,
     rejectionReasonFieldId,
     commentListIdToName,
+    commentListStageIdToName,
+    commentListStageId,
+    commentListStageFieldId,
     sourceIdToName,
     countryIdToName,
     allStageIdsInOrder

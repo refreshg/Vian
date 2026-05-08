@@ -76,6 +76,9 @@ export function computeDashboardData(
   rejectionReasonIdToName?: Record<string, string>,
   rejectionReasonFieldId?: string,
   commentListIdToName?: Record<string, string>,
+  commentListStageIdToName?: Record<string, string>,
+  commentListStageId?: string,
+  commentListStageFieldId?: string,
   sourceIdToName?: Record<string, string>,
   countryIdToName?: Record<string, string>,
   allStageIdsInOrder?: string[]
@@ -159,11 +162,18 @@ export function computeDashboardData(
 
   // Comment (list) = deals with UF_CRM_1768995573895 set, grouped by mapped string value
   const commentMap = new Map<string, number>();
+  const stageSpecificFieldKey = commentListStageFieldId ?? "UF_CRM_1774442321633";
+  const stageSpecificId = commentListStageId ?? "C1:UC_6L0FQZ";
   for (const d of deals) {
-    const raw = d.UF_CRM_1768995573895;
+    const isStageSpecific = String(d.STAGE_ID ?? "") === stageSpecificId;
+    const raw = isStageSpecific
+      ? (d as any)[stageSpecificFieldKey]
+      : d.UF_CRM_1768995573895;
     if (raw == null || raw === "") continue;
     const id = String(raw);
-    const name = commentListIdToName?.[id] ?? id;
+    const name = isStageSpecific
+      ? (commentListStageIdToName?.[id] ?? commentListIdToName?.[id] ?? id)
+      : (commentListIdToName?.[id] ?? id);
     commentMap.set(name, (commentMap.get(name) ?? 0) + 1);
   }
   const commentListRows: CommentListRow[] = Array.from(commentMap.entries())

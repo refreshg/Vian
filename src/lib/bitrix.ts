@@ -435,6 +435,7 @@ export async function fetchDealList(params: {
       "UF_CRM_1753862633986",
       "UF_CRM_1753861857976",
       "UF_CRM_1768995573895",
+      "UF_CRM_1774442321633",
       "UF_CRM_1769688668259",
       "UF_CRM_1774537634447",
     ],
@@ -470,17 +471,36 @@ export async function fetchDealList(params: {
  */
 function normalizeDateTimeInput(value: string, mode: "start" | "end"): string {
   const trimmed = (value ?? "").trim();
-  if (!trimmed) return mode === "start" ? "1970-01-01 00:00:00" : "1970-01-01 23:59:59";
+  if (!trimmed)
+    return mode === "start"
+      ? "1970-01-01T00:00:00+00:00"
+      : "1970-01-01T23:59:59+00:00";
+  const toIsoWithOffset = (localDateTime: string): string => {
+    const normalized = localDateTime.length === 16 ? `${localDateTime}:00` : localDateTime;
+    const d = new Date(normalized);
+    if (!Number.isFinite(d.getTime())) return normalized;
+    const pad = (n: number) => String(Math.trunc(Math.abs(n))).padStart(2, "0");
+    const y = d.getFullYear();
+    const m = pad(d.getMonth() + 1);
+    const day = pad(d.getDate());
+    const hh = pad(d.getHours());
+    const mm = pad(d.getMinutes());
+    const ss = pad(d.getSeconds());
+    const offsetMinutes = -d.getTimezoneOffset();
+    const sign = offsetMinutes >= 0 ? "+" : "-";
+    const offH = pad(offsetMinutes / 60);
+    const offM = pad(offsetMinutes % 60);
+    return `${y}-${m}-${day}T${hh}:${mm}:${ss}${sign}${offH}:${offM}`;
+  };
   // datetime-local format: YYYY-MM-DDTHH:mm
   if (trimmed.includes("T")) {
-    const withSpace = trimmed.replace("T", " ");
-    return withSpace.length === 16 ? `${withSpace}:00` : withSpace;
+    return toIsoWithOffset(trimmed);
   }
   // date-only format: YYYY-MM-DD
   if (/^\d{4}-\d{2}-\d{2}$/.test(trimmed)) {
-    return mode === "start"
-      ? `${trimmed} 00:00:00`
-      : `${trimmed} 23:59:59`;
+    return toIsoWithOffset(
+      mode === "start" ? `${trimmed}T00:00:00` : `${trimmed}T23:59:59`
+    );
   }
   return trimmed;
 }
@@ -537,6 +557,7 @@ export async function fetchAllDealsInRange(params: {
     "UF_CRM_1753862633986",
     "UF_CRM_1753861857976",
     "UF_CRM_1768995573895",
+    "UF_CRM_1774442321633",
     "UF_CRM_1769688668259",
     "UF_CRM_1774537634447",
   ];
