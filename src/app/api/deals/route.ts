@@ -40,12 +40,10 @@ export async function GET(request: NextRequest) {
       categoryId: category,
     });
     const deals = Array.isArray(dealsRaw) ? dealsRaw : [];
-    const dealsForCategory = deals.filter(
-      (d) =>
-        d &&
-        typeof d === "object" &&
-        String(d.CATEGORY_ID ?? "") === category
-    );
+    // fetchAllDealsInRange already applies CATEGORY_ID filter in Bitrix query.
+    // Keep the list as-is to avoid accidentally dropping valid records due to
+    // formatting differences (e.g. numeric vs string category values).
+    const dealsForCategory = deals;
 
     const dealIds = dealsForCategory
       .map((d) => (d && typeof d === "object" && "ID" in d ? String(d.ID) : ""))
@@ -122,6 +120,13 @@ export async function GET(request: NextRequest) {
     return NextResponse.json({
       result: dealsForCategory,
       total: dealsForCategory.length,
+      debugCount: {
+        category,
+        startDate,
+        endDate,
+        countFromBitrix: deals.length,
+        countReturned: dealsForCategory.length,
+      },
       stageNameMap: stageResult.nameMap,
       allStageIdsInOrder: stageResult.stageIdsInOrder,
       sourceIdToName,

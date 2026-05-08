@@ -113,6 +113,9 @@ export default function DashboardPage() {
       if (Array.isArray(data.followUpMonthsDebug)) {
         console.log("🗓️ FOLLOW UP MONTHS DEBUG:", data.followUpMonthsDebug);
       }
+      if (data.debugCount) {
+        console.log("📊 DEAL COUNT DEBUG:", data.debugCount);
+      }
     } catch (e) {
       setError(e instanceof Error ? e.message : "Something went wrong");
       setDeals([]);
