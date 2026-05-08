@@ -121,6 +121,7 @@ export async function fetchSourceNameMap(): Promise<Record<string, string>> {
 /** Option item for dropdown/list fields in crm.deal.fields (items or list array). */
 interface BitrixFieldOption {
   ID: string | number;
+  NAME?: string;
   VALUE: string;
   [key: string]: unknown;
 }
@@ -168,9 +169,18 @@ export async function fetchDealFieldOptions(
 
   const map: Record<string, string> = {};
   for (const item of items) {
-    const id = item.ID != null ? String(item.ID) : "";
-    const value = item.VALUE ?? "";
-    if (id) map[id] = value;
+    // Bitrix can return list options in different shapes:
+    // - { ID, VALUE }
+    // - { VALUE, NAME } (no ID, VALUE is the real stored value)
+    const keyCandidate =
+      item.ID != null && String(item.ID).trim() !== ""
+        ? String(item.ID).trim()
+        : (item.VALUE != null ? String(item.VALUE).trim() : "");
+    const labelCandidate =
+      item.NAME != null && String(item.NAME).trim() !== ""
+        ? String(item.NAME).trim()
+        : (item.VALUE != null ? String(item.VALUE).trim() : "");
+    if (keyCandidate) map[keyCandidate] = labelCandidate;
   }
   return map;
 }
