@@ -1,11 +1,31 @@
 import type { BitrixDeal } from "@/types/bitrix";
 import type { BitrixActivityItem, StageHistoryItem } from "./bitrix";
 
+/** Price-sharing stage per pipeline (Bitrix STATUS_ID). */
+export const PRICE_SHARING_STAGE_ID_BY_CATEGORY: Record<string, string> = {
+  "1": "C1:UC_W95SAM",
+  "2": "C2:FINAL_INVOICE",
+  "3": "C3:UC_QHKPK0",
+  "4": "C4:UC_GR8ROT",
+  "5": "C5:UC_0VR22O",
+};
+
+export interface SlaDealRow {
+  dealId: string;
+  title: string;
+  stageId: string;
+  stageName: string;
+  detail: string;
+}
+
 export interface SlaMetric {
   title: string;
   onTimeCount: number;
   totalCount: number;
   rate: number; // percentage 0-100
+  /** Broader pool for context (e.g. all in-range deals with valid create). */
+  poolCount?: number;
+  rows?: SlaDealRow[];
 }
 
 export interface SlaSummary {
@@ -34,19 +54,40 @@ function calendarHoursBetween(startMs: number, endMs: number): number {
   return (endMs - startMs) / ONE_HOUR_MS;
 }
 
-interface BusinessHoursConfig {
+export interface BusinessHoursConfig {
   workdayStartHour: number;
   workdayEndHour: number;
 }
 
-const DEFAULT_BUSINESS_HOURS: BusinessHoursConfig = {
-  workdayStartHour: 0,
-  workdayEndHour: 18,
-};
+export function getBusinessHoursForCategory(
+  categoryId?: string
+): BusinessHoursConfig {
+  const id = String(categoryId ?? "1").trim();
+  if (id === "4") {
+    return { workdayStartHour: 10, workdayEndHour: 19 };
+  }
+  return { workdayStartHour: 9, workdayEndHour: 18 };
+}
 
 function isWeekend(date: Date): boolean {
   const day = date.getDay();
   return day === 0 || day === 6;
+}
+
+/** True if local timestamp falls on a weekday and clock time is in [start, end) hours. */
+export function isInstantInBusinessHours(
+  ms: number,
+  businessHours: BusinessHoursConfig
+): boolean {
+  if (!Number.isFinite(ms)) return false;
+  const d = new Date(ms);
+  if (isWeekend(d)) return false;
+  const { workdayStartHour, workdayEndHour } = businessHours;
+  if (workdayEndHour <= workdayStartHour) return false;
+  const mins = d.getHours() * 60 + d.getMinutes() + d.getSeconds() / 60;
+  const startM = workdayStartHour * 60;
+  const endM = workdayEndHour * 60;
+  return mins >= startM && mins < endM;
 }
 
 function businessHoursBetween(
@@ -85,16 +126,8 @@ function businessHoursBetween(
 /** Stage name phrases for multi-pipeline SLA (stage IDs differ per pipeline, e.g. C1:NEW vs C2:NEW). */
 const PHRASE_INITIAL = "Coordinator did not start";
 const PHRASE_FOLLOW_UP = "Follow up in 24 Hours";
-const PHRASE_FOLLOW_UP_MONTHS = "Follow up in Months";
 const PHRASE_CONTACT_SUCCESSFUL = "Contact was Successful";
 const PHRASE_ACTIVE_COMMUNICATION = "Active communication";
-const PRICE_SHARING_STAGE_IDS = new Set<string>([
-  "C1:UC_Y4KFLS", // Category 1
-  "C2:UC_LT5MYB", // Category 2
-  "C3:UC_XKQDFU", // Category 3
-  "C4:UC_COEU6V", // Category 4
-  "C5:UC_OFCRM2", // Category 5
-]);
 
 /** Return stage IDs whose human-readable name contains the given phrase (case-insensitive). */
 function stageIdsMatchingName(
@@ -138,13 +171,10 @@ function parseTimeMs(value: string | undefined | null): number {
   return Number.isFinite(t) ? t : NaN;
 }
 
-function activityEffectiveTimeMs(activity: BitrixActivityItem): number {
-  const completed = String(activity.COMPLETED ?? "").toUpperCase() === "Y";
-  const completedAt = parseTimeMs(
-    String(activity.END_TIME ?? activity.LAST_UPDATED ?? "")
-  );
-  if (completed && Number.isFinite(completedAt)) return completedAt;
-  return Date.now();
+function activityScheduledMs(activity: BitrixActivityItem): number {
+  const d = parseTimeMs(String(activity.DEADLINE ?? "").trim());
+  if (Number.isFinite(d)) return d;
+  return parseTimeMs(String(activity.START_TIME ?? "").trim());
 }
 
 /** Normalize STAGE_ID for comparison (trim, no case change — Bitrix returns exact casing). */
@@ -182,13 +212,35 @@ function buildHistoryMap(
 function makeMetric(
   title: string,
   onTimeCount: number,
-  totalCount: number
+  totalCount: number,
+  extras?: Partial<Pick<SlaMetric, "poolCount" | "rows">>
 ): SlaMetric {
   const rate =
     totalCount > 0
       ? Math.round(((onTimeCount / totalCount) * 100) * 10) / 10
       : 0;
-  return { title, onTimeCount, totalCount, rate };
+  return {
+    title,
+    onTimeCount,
+    totalCount,
+    rate,
+    ...extras,
+  };
+}
+
+function dealRow(
+  deal: BitrixDeal,
+  stageIdToName: Record<string, string>,
+  detail: string
+): SlaDealRow {
+  const sid = String(deal.STAGE_ID ?? "");
+  return {
+    dealId: String(deal.ID ?? ""),
+    title: String(deal.TITLE ?? ""),
+    stageId: sid,
+    stageName: stageIdToName[sid] ?? sid,
+    detail,
+  };
 }
 
 export function computeSlaMetrics(
@@ -197,6 +249,8 @@ export function computeSlaMetrics(
   stageIdToName: Record<string, string> = {},
   activitiesByDeal: Record<string, BitrixActivityItem[]> = {},
   options?: {
+    categoryId?: string;
+    priceSharingStageId?: string;
     priceSharingDebugOut?: PriceSharingDebugRow[];
     firstCommDebugOut?: any[];
     followUpOverrideIdToName?: Record<string, string>;
@@ -205,15 +259,19 @@ export function computeSlaMetrics(
   }
 ): SlaSummary {
   const safeDeals = Array.isArray(deals) ? deals : [];
+  const categoryId = String(options?.categoryId ?? "1").trim();
+  const baseBh = getBusinessHoursForCategory(categoryId);
   const businessHours: BusinessHoursConfig = {
     workdayStartHour:
-      options?.businessHours?.workdayStartHour ??
-      DEFAULT_BUSINESS_HOURS.workdayStartHour,
+      options?.businessHours?.workdayStartHour ?? baseBh.workdayStartHour,
     workdayEndHour:
-      options?.businessHours?.workdayEndHour ??
-      DEFAULT_BUSINESS_HOURS.workdayEndHour,
+      options?.businessHours?.workdayEndHour ?? baseBh.workdayEndHour,
   };
   const historyMap = buildHistoryMap(histories);
+  const priceSharingStageId =
+    options?.priceSharingStageId ??
+    PRICE_SHARING_STAGE_ID_BY_CATEGORY[categoryId] ??
+    "";
 
   const initialStageIds = buildInitialStageIds(stageIdToName);
   const followUpStageIds = stageIdsMatchingName(stageIdToName, PHRASE_FOLLOW_UP);
@@ -225,10 +283,6 @@ export function computeSlaMetrics(
     stageIdToName,
     PHRASE_CONTACT_SUCCESSFUL
   );
-  const followUpMonthsStageIds = stageIdsMatchingName(
-    stageIdToName,
-    PHRASE_FOLLOW_UP_MONTHS
-  );
   const activeCommunicationStageIds = stageIdsMatchingName(
     stageIdToName,
     PHRASE_ACTIVE_COMMUNICATION
@@ -239,20 +293,44 @@ export function computeSlaMetrics(
   const isFollowUpDayStage = (sid: string) => followUpDayStageIds.has(sid);
   const isContactSuccessfulStage = (sid: string) =>
     contactSuccessfulStageIds.has(sid);
-  const isFollowUpMonthsStage = (sid: string) =>
-    followUpMonthsStageIds.has(sid);
   const isActiveCommunicationStage = (sid: string) =>
     activeCommunicationStageIds.has(sid);
-  const isPriceSharingStage = (sid: string) => PRICE_SHARING_STAGE_IDS.has(sid);
+  const isPriceSharingStage = (sid: string) =>
+    Boolean(priceSharingStageId) && sid === priceSharingStageId;
 
+  const normalizeYes = (value: unknown): boolean => {
+    const raw = String(value ?? "").trim().toLowerCase();
+    return raw === "yes" || raw === "y" || raw === "true" || raw === "1";
+  };
+  const isYesValue = (value: unknown): boolean => {
+    if (normalizeYes(value)) return true;
+    const parts: string[] = [];
+    if (Array.isArray(value)) {
+      for (const v of value) parts.push(String(v ?? "").trim());
+    } else {
+      const s = String(value ?? "").trim();
+      if (s) {
+        for (const p of s.split(/[,\|;]+/g)) parts.push(p.trim());
+      }
+    }
+    for (const id of parts) {
+      if (!id) continue;
+      if (normalizeYes(id)) return true;
+      const mappedLabel = options?.followUpOverrideIdToName?.[id];
+      if (normalizeYes(mappedLabel)) return true;
+    }
+    return false;
+  };
 
-  // —— A. First Communication (<= 1 calendar hour from DATE_CREATE to first move out of initial stage) ——
-  // First transition to ANY stage strictly different from initial. Ignore creation-moment assignment (event time must be > createMs).
+  // —— A. First Communication (<= 1 business hour from DATE_CREATE to first move out of initial stage) ——
   const FIRST_COMMUNICATION_LIMIT_HOURS = 1;
-  let firstOnTime = 0;
-  let firstTotal = 0;
-  const firstCommDebug: any[] = [];
   const nowMs = Date.now();
+  let firstPool = 0;
+  let firstBhTotal = 0;
+  let firstBhOnTime = 0;
+  const firstCommDebug: any[] = [];
+  const firstRows: SlaDealRow[] = [];
+
   for (const deal of safeDeals) {
     const dealId = deal?.ID != null ? String(deal.ID) : "";
     if (!dealId) continue;
@@ -261,6 +339,8 @@ export function computeSlaMetrics(
       typeof dateCreate === "string" ? dateCreate : undefined
     );
     if (!Number.isFinite(createMs)) continue;
+    firstPool += 1;
+
     const events = historyMap[dealId] ?? [];
     let firstCommEnteredAt: string | null = null;
     let triggerStageId: string | null = null;
@@ -285,14 +365,17 @@ export function computeSlaMetrics(
       : nowMs;
     const endMsSafe = Number.isFinite(endMs) ? endMs : nowMs;
     const diffHours = calendarHoursBetween(createMs, endMsSafe);
-    const diffBusinessHours = businessHoursBetween(createMs, endMsSafe, businessHours);
+    const diffBusinessHours = businessHoursBetween(
+      createMs,
+      endMsSafe,
+      businessHours
+    );
     const isOnTime = diffBusinessHours <= FIRST_COMMUNICATION_LIMIT_HOURS;
-    firstTotal += 1;
-    if (isOnTime) firstOnTime += 1;
     const triggerStageLabel =
       triggerStageId != null
         ? (stageIdToName[triggerStageId] ?? triggerStageId)
         : "PENDING";
+
     firstCommDebug.push({
       Deal_ID: dealId,
       Created_At: typeof dateCreate === "string" ? dateCreate : String(dateCreate ?? ""),
@@ -302,100 +385,175 @@ export function computeSlaMetrics(
       Calculated_Business_Hours: Math.round(diffBusinessHours * 100) / 100,
       Is_On_Time: isOnTime,
     });
+
+    const createdInBh = isInstantInBusinessHours(createMs, businessHours);
+    if (!createdInBh) continue;
+
+    firstBhTotal += 1;
+    if (isOnTime) firstBhOnTime += 1;
+
+    firstRows.push(
+      dealRow(
+        deal,
+        stageIdToName,
+        [
+          `Created: ${typeof dateCreate === "string" ? dateCreate : String(dateCreate ?? "")}`,
+          `First move: ${firstCommEnteredAt ?? "PENDING"} → ${triggerStageLabel}`,
+          `Business hours to first move: ${Math.round(diffBusinessHours * 100) / 100}h`,
+          isOnTime ? "On time" : "Late",
+        ].join(" · ")
+      )
+    );
   }
 
-  // —— B. Follow-up on Time (Day 1 - Day 5; on-time when it reaches "Contact was Successful" within 5 days) ——
-  let followOnTime = 0;
-  let followTotal = 0;
+  // —— B. Follow-up on Time ——
   const FIVE_DAYS_MS = 5 * TWENTY_FOUR_HOURS_MS;
-  const normalizeYes = (value: unknown): boolean => {
-    const raw = String(value ?? "").trim().toLowerCase();
-    return raw === "yes" || raw === "y" || raw === "true" || raw === "1";
-  };
-  const isYesValue = (value: unknown): boolean => {
-    // Bitrix dropdowns can return ID, label, array of IDs, or delimited string.
-    if (normalizeYes(value)) return true;
-    const parts: string[] = [];
-    if (Array.isArray(value)) {
-      for (const v of value) parts.push(String(v ?? "").trim());
-    } else {
-      const s = String(value ?? "").trim();
-      if (s) {
-        // split on common delimiters for multi-values
-        for (const p of s.split(/[,\|;]+/g)) parts.push(p.trim());
+  let followPool = 0;
+  let followBhTotal = 0;
+  let followBhOnTime = 0;
+  const followRows: SlaDealRow[] = [];
+
+  for (const deal of safeDeals) {
+    const dealId = deal?.ID != null ? String(deal.ID) : "";
+    if (!dealId) continue;
+    const dateCreate = deal?.DATE_CREATE;
+    const createMs = parseTimeMs(
+      typeof dateCreate === "string" ? dateCreate : undefined
+    );
+    if (!Number.isFinite(createMs)) continue;
+
+    const events = historyMap[dealId];
+    let qualifies = false;
+    let isOnTime = false;
+    let detailParts: string[] = [];
+
+    if (isYesValue((deal as any).UF_CRM_1774537634447)) {
+      qualifies = true;
+      isOnTime = true;
+      detailParts = ["Override: on time"];
+    } else if (events?.length) {
+      const entryIndex = events.findIndex((e) => {
+        const sid = stageId(e.STAGE_ID);
+        return isFollowUpStage(sid) || isFollowUpDayStage(sid);
+      });
+      if (entryIndex !== -1) {
+        qualifies = true;
+        const entryMs = parseTimeMs(events[entryIndex].CREATED_TIME);
+        if (Number.isFinite(entryMs)) {
+          const successEvent = events
+            .slice(entryIndex + 1)
+            .find((e) => isContactSuccessfulStage(stageId(e.STAGE_ID)));
+          if (successEvent) {
+            const successMs = parseTimeMs(successEvent.CREATED_TIME);
+            if (Number.isFinite(successMs)) {
+              const diffBusinessHours = businessHoursBetween(
+                entryMs,
+                successMs,
+                businessHours
+              );
+              isOnTime = diffBusinessHours * ONE_HOUR_MS <= FIVE_DAYS_MS;
+              detailParts = [
+                `Follow-up from: ${events[entryIndex].CREATED_TIME}`,
+                `Success at: ${successEvent.CREATED_TIME}`,
+                `Elapsed (business h): ${Math.round(diffBusinessHours * 100) / 100}h`,
+                isOnTime ? "On time" : "Late",
+              ];
+            } else {
+              detailParts = ["Success stage time invalid"];
+              isOnTime = false;
+            }
+          } else {
+            detailParts = ["No Contact was Successful after follow-up"];
+            isOnTime = false;
+          }
+        } else {
+          detailParts = ["Follow-up entry time invalid"];
+          isOnTime = false;
+        }
       }
     }
-    for (const id of parts) {
-      if (!id) continue;
-      if (normalizeYes(id)) return true;
-      const mappedLabel = options?.followUpOverrideIdToName?.[id];
-      if (normalizeYes(mappedLabel)) return true;
-    }
-    return false;
-  };
-  for (const deal of safeDeals) {
-    const dealId = deal?.ID != null ? String(deal.ID) : "";
-    if (!dealId) continue;
-    const events = historyMap[dealId];
-    // Override: if UF_CRM_1774537634447 is "yes" (or maps to Yes), count as on-time
-    // even if the deal never entered Day 1-5 / Follow-up stages.
-    if (isYesValue((deal as any).UF_CRM_1774537634447)) {
-      followTotal += 1;
-      followOnTime += 1;
-      continue;
-    }
-    if (!events?.length) continue;
-    const entryIndex = events.findIndex((e) => {
-      const sid = stageId(e.STAGE_ID);
-      return isFollowUpStage(sid) || isFollowUpDayStage(sid);
-    });
-    if (entryIndex === -1) continue;
-    followTotal += 1;
-    const entryMs = parseTimeMs(events[entryIndex].CREATED_TIME);
-    if (!Number.isFinite(entryMs)) continue;
-    const successEvent = events
-      .slice(entryIndex + 1)
-      .find((e) => isContactSuccessfulStage(stageId(e.STAGE_ID)));
-    if (!successEvent) continue;
-    const successMs = parseTimeMs(successEvent.CREATED_TIME);
-    if (!Number.isFinite(successMs)) continue;
-    const diffBusinessHours = businessHoursBetween(entryMs, successMs, businessHours);
-    if (diffBusinessHours * ONE_HOUR_MS <= FIVE_DAYS_MS) followOnTime += 1;
+
+    if (!qualifies) continue;
+    followPool += 1;
+
+    if (!isInstantInBusinessHours(createMs, businessHours)) continue;
+
+    followBhTotal += 1;
+    if (isOnTime) followBhOnTime += 1;
+    followRows.push(dealRow(deal, stageIdToName, detailParts.join(" · ")));
   }
 
-  // —— B2. Follow-up in Months on Time ——
-  // Qualifying: entered "Follow up in Months".
-  // On-time: entry happened within the same calendar month as deal creation.
-  // This metric stays month-based; business-hour exclusions are not applicable.
-  // Override: UF_CRM_1774537634447 = yes → on-time regardless.
-  let followMonthsOnTime = 0;
+  // —— B2. Follow-up in Months (activities with scheduled time) ——
   let followMonthsTotal = 0;
+  let followMonthsOnTime = 0;
+  const followMonthsRows: SlaDealRow[] = [];
+
   for (const deal of safeDeals) {
     const dealId = deal?.ID != null ? String(deal.ID) : "";
     if (!dealId) continue;
-    const events = historyMap[dealId];
-    if (!events?.length) continue;
-    const entryIndex = events.findIndex((e) =>
-      isFollowUpMonthsStage(stageId(e.STAGE_ID))
+    const activities = activitiesByDeal[dealId] ?? [];
+    const timed = activities.filter((a) =>
+      Number.isFinite(activityScheduledMs(a))
     );
-    if (entryIndex === -1) continue;
+    if (timed.length === 0) continue;
+
     followMonthsTotal += 1;
-    if (isYesValue((deal as any).UF_CRM_1774537634447)) {
-      followMonthsOnTime += 1;
-      continue;
+    const override = isYesValue((deal as any).UF_CRM_1774537634447);
+    let dealOnTime = override;
+
+    const activityLines: string[] = [];
+    if (!override) {
+      dealOnTime = true;
+        const now = Date.now();
+      for (const a of timed) {
+        const sched = activityScheduledMs(a);
+        const schedLabel = String(a.DEADLINE ?? a.START_TIME ?? "").trim();
+        const completed = String(a.COMPLETED ?? "").toUpperCase() === "Y";
+        const endAt = parseTimeMs(
+          String(a.END_TIME ?? a.LAST_UPDATED ?? "").trim()
+        );
+        let ok = true;
+        if (completed && Number.isFinite(endAt)) {
+          ok = endAt <= sched;
+        } else if (completed) {
+          ok = true;
+        } else {
+          ok = now <= sched;
+        }
+        if (!ok) dealOnTime = false;
+        const endLabel =
+          completed && Number.isFinite(endAt)
+            ? String(a.END_TIME ?? a.LAST_UPDATED ?? "").trim()
+            : "";
+        activityLines.push(
+          `Act.${a.ID} @ ${schedLabel || String(sched)} → ${
+            completed
+              ? `done ${endLabel || "?"}`
+              : now > sched
+                ? "overdue (open)"
+                : "pending"
+          }`
+        );
+      }
+    } else {
+      activityLines.push("Override: on time");
     }
-    const createMs = parseTimeMs(String((deal as any).DATE_CREATE ?? ""));
-    const entryMs = parseTimeMs(events[entryIndex].CREATED_TIME);
-    if (!Number.isFinite(createMs) || !Number.isFinite(entryMs)) continue;
-    const createdAt = new Date(createMs);
-    const enteredAt = new Date(entryMs);
-    const sameMonth =
-      createdAt.getFullYear() === enteredAt.getFullYear() &&
-      createdAt.getMonth() === enteredAt.getMonth();
-    if (sameMonth) followMonthsOnTime += 1;
+
+    if (dealOnTime) followMonthsOnTime += 1;
+    followMonthsRows.push(
+      dealRow(deal, stageIdToName, activityLines.join(" | "))
+    );
+
+    if (options?.followUpMonthsDebugOut) {
+      options.followUpMonthsDebugOut.push({
+        Deal_ID: dealId,
+        Activities: timed.length,
+        On_Time: dealOnTime,
+      });
+    }
   }
 
-  // —— C. Price Sharing (<= 24 hours from Active communication to Price Sharing stage) ——
+  // —— C. Price Sharing ——
   let priceOnTime = 0;
   let priceTotal = 0;
   const priceSharingDebug: Array<{
@@ -406,23 +564,64 @@ export function computeSlaMetrics(
     Calculated_Business_Hours: number;
     Is_On_Time: boolean;
   }> = [];
+  const priceRows: SlaDealRow[] = [];
+
+  const findFirstPriceSharingIndex = (
+    events: StageHistoryItem[]
+  ): number => {
+    return events.findIndex((e) => isPriceSharingStage(stageId(e.STAGE_ID)));
+  };
+
+  const getPriceEntryMs = (
+    deal: BitrixDeal,
+    events: StageHistoryItem[]
+  ): { entryMs: number; entryLabel: string } | null => {
+    const idx = findFirstPriceSharingIndex(events);
+    if (idx !== -1) {
+      const t = parseTimeMs(events[idx].CREATED_TIME);
+      if (Number.isFinite(t))
+        return { entryMs: t, entryLabel: String(events[idx].CREATED_TIME ?? "") };
+    }
+    if (isPriceSharingStage(String(deal.STAGE_ID ?? ""))) {
+      const t = parseTimeMs(String(deal.DATE_CREATE ?? ""));
+      if (Number.isFinite(t))
+        return {
+          entryMs: t,
+          entryLabel: `current stage (created ${deal.DATE_CREATE ?? ""})`,
+        };
+    }
+    return null;
+  };
+
+  const dealQualifiesPriceSharing = (
+    deal: BitrixDeal,
+    events: StageHistoryItem[]
+  ): boolean => {
+    if (!priceSharingStageId) return false;
+    if (isPriceSharingStage(String(deal.STAGE_ID ?? ""))) return true;
+    return events.some((e) => isPriceSharingStage(stageId(e.STAGE_ID)));
+  };
+
   for (const deal of safeDeals) {
     const dealId = deal?.ID != null ? String(deal.ID) : "";
-    if (!dealId) continue;
-    const events = historyMap[dealId];
-    if (!events?.length) continue;
-    const entryIndex = events.findIndex((e) =>
-      isPriceSharingStage(stageId(e.STAGE_ID))
-    );
-    if (entryIndex === -1) continue;
+    if (!dealId || !priceSharingStageId) continue;
+    const events = historyMap[dealId] ?? [];
+    if (!dealQualifiesPriceSharing(deal, events)) continue;
+
+    const entry = getPriceEntryMs(deal, events);
+    if (!entry) continue;
+
     priceTotal += 1;
-    const priceEntryMs = parseTimeMs(events[entryIndex].CREATED_TIME);
-    if (!Number.isFinite(priceEntryMs)) continue;
-    const enteredAt = String(events[entryIndex].CREATED_TIME ?? "");
-    const activeCommunicationEvent = events
-      .slice(0, entryIndex)
-      .reverse()
-      .find((e) => isActiveCommunicationStage(stageId(e.STAGE_ID)));
+    const { entryMs: priceEntryMs, entryLabel: enteredAt } = entry;
+
+    let activeCommunicationEvent: StageHistoryItem | undefined;
+    for (const e of events) {
+      const t = parseTimeMs(e.CREATED_TIME);
+      if (!Number.isFinite(t) || t >= priceEntryMs) continue;
+      if (isActiveCommunicationStage(stageId(e.STAGE_ID)))
+        activeCommunicationEvent = e;
+    }
+
     const activeCommunicationMs = activeCommunicationEvent
       ? parseTimeMs(activeCommunicationEvent.CREATED_TIME)
       : NaN;
@@ -439,6 +638,7 @@ export function computeSlaMetrics(
     const isOnTime =
       Number.isFinite(activeCommunicationMs) &&
       diffBusinessHours * ONE_HOUR_MS <= TWENTY_FOUR_HOURS_MS;
+
     priceSharingDebug.push({
       Deal_ID: dealId,
       Entered_Stage_At: activeCommunicationAt,
@@ -464,6 +664,21 @@ export function computeSlaMetrics(
       });
     }
     if (isOnTime) priceOnTime += 1;
+
+    priceRows.push(
+      dealRow(
+        deal,
+        stageIdToName,
+        [
+          `Price stage entry: ${enteredAt}`,
+          `Active communication: ${activeCommunicationAt}`,
+          Number.isFinite(diffBusinessHours)
+            ? `Business hours (active → price): ${Math.round(diffBusinessHours * 100) / 100}h`
+            : "—",
+          isOnTime ? "On time" : "Late / incomplete",
+        ].join(" · ")
+      )
+    );
   }
 
   if (options?.firstCommDebugOut) {
@@ -473,19 +688,28 @@ export function computeSlaMetrics(
   return {
     firstCommunication: makeMetric(
       "First Communication on Time",
-      firstOnTime,
-      firstTotal
+      firstBhOnTime,
+      firstBhTotal,
+      {
+        poolCount: firstPool,
+        rows: firstRows,
+      }
     ),
-    followUp: makeMetric("Follow-up on Time", followOnTime, followTotal),
+    followUp: makeMetric("Follow-up on Time", followBhOnTime, followBhTotal, {
+      poolCount: followPool,
+      rows: followRows,
+    }),
     followUpMonths: makeMetric(
       "Follow up in Months on Time",
       followMonthsOnTime,
-      followMonthsTotal
+      followMonthsTotal,
+      { rows: followMonthsRows }
     ),
     priceSharing: makeMetric(
       "Price sharing to Patient on Time",
       priceOnTime,
-      priceTotal
+      priceTotal,
+      { rows: priceRows }
     ),
   };
 }

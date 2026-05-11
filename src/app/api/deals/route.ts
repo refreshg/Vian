@@ -7,7 +7,12 @@ import {
   fetchStageHistoryForDeals,
   fetchActivitiesForDeals,
 } from "@/lib/bitrix";
-import { computeSlaMetrics, type PriceSharingDebugRow } from "@/lib/slaMetrics";
+import {
+  computeSlaMetrics,
+  getBusinessHoursForCategory,
+  PRICE_SHARING_STAGE_ID_BY_CATEGORY,
+  type PriceSharingDebugRow,
+} from "@/lib/slaMetrics";
 
 const DEPARTMENT_FIELD_ID = "UF_CRM_1758023694929";
 /** Rejection reasons field for Pipeline 1 (Caucasus Medical Centre) */
@@ -19,13 +24,6 @@ const COMMENT_LIST_STAGE_FIELD_ID = "UF_CRM_1774442321633";
 const COMMENT_LIST_STAGE_ID = "C1:UC_6L0FQZ";
 const COUNTRY_FIELD_ID = "UF_CRM_1769688668259";
 const FOLLOW_UP_OVERRIDE_FIELD_ID = "UF_CRM_1774537634447";
-const PRICE_SHARING_STAGE_IDS_BY_CATEGORY: Record<string, string> = {
-  "1": "C1:UC_Y4KFLS",
-  "2": "C2:UC_LT5MYB",
-  "3": "C3:UC_XKQDFU",
-  "4": "C4:UC_COEU6V",
-  "5": "C5:UC_OFCRM2",
-};
 
 export async function GET(request: NextRequest) {
   const searchParams = request.nextUrl.searchParams;
@@ -99,6 +97,9 @@ export async function GET(request: NextRequest) {
     const priceSharingDebug: PriceSharingDebugRow[] = [];
     const firstCommDebug: any[] = [];
     const followUpMonthsDebug: any[] = [];
+    const bh = getBusinessHoursForCategory(category);
+    const priceStageIdForCategory =
+      PRICE_SHARING_STAGE_ID_BY_CATEGORY[category] ?? "";
     try {
       slaMetrics = computeSlaMetrics(
         dealsForCategory,
@@ -106,26 +107,51 @@ export async function GET(request: NextRequest) {
         stageResult?.nameMap ?? {},
         activitiesByDeal,
         {
+          categoryId: category,
+          priceSharingStageId: priceStageIdForCategory,
           priceSharingDebugOut: priceSharingDebug,
           firstCommDebugOut: firstCommDebug,
           followUpOverrideIdToName,
           followUpMonthsDebugOut: followUpMonthsDebug,
-          businessHours: {
-            workdayStartHour: 0,
-            workdayEndHour: 18,
-          },
+          businessHours: bh,
         }
       );
     } catch {
       slaMetrics = {
-        firstCommunication: { title: "First Communication on Time", onTimeCount: 0, totalCount: 0, rate: 0 },
-        followUp: { title: "Follow-up on Time", onTimeCount: 0, totalCount: 0, rate: 0 },
-        followUpMonths: { title: "Follow up in Months on Time", onTimeCount: 0, totalCount: 0, rate: 0 },
-        priceSharing: { title: "Price sharing to Patient on Time", onTimeCount: 0, totalCount: 0, rate: 0 },
+        firstCommunication: {
+          title: "First Communication on Time",
+          onTimeCount: 0,
+          totalCount: 0,
+          rate: 0,
+          poolCount: 0,
+          rows: [],
+        },
+        followUp: {
+          title: "Follow-up on Time",
+          onTimeCount: 0,
+          totalCount: 0,
+          rate: 0,
+          poolCount: 0,
+          rows: [],
+        },
+        followUpMonths: {
+          title: "Follow up in Months on Time",
+          onTimeCount: 0,
+          totalCount: 0,
+          rate: 0,
+          rows: [],
+        },
+        priceSharing: {
+          title: "Price sharing to Patient on Time",
+          onTimeCount: 0,
+          totalCount: 0,
+          rate: 0,
+          rows: [],
+        },
       };
     }
 
-    const configuredPriceSharingStageId = PRICE_SHARING_STAGE_IDS_BY_CATEGORY[category];
+    const configuredPriceSharingStageId = priceStageIdForCategory;
     const priceSharingStageIds = configuredPriceSharingStageId
       ? [configuredPriceSharingStageId]
       : [];
@@ -179,7 +205,7 @@ export async function GET(request: NextRequest) {
       slaMetrics,
       priceSharingDebug,
       priceSharingValidationDebug: {
-        stageConfig: PRICE_SHARING_STAGE_IDS_BY_CATEGORY,
+        stageConfig: PRICE_SHARING_STAGE_ID_BY_CATEGORY,
         selectedCategory: category,
         matchedStageIds: priceSharingStageIds,
         matchedStageNames: priceSharingStageIds.map(
