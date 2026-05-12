@@ -8,6 +8,7 @@ interface SlaMetricsProps {
 }
 
 const FIRST_COMM_TITLE = "First Communication on Time";
+const FOLLOW_UP_TITLE = "Follow-up on Time";
 
 function metricSubtitle(m: SlaMetric): string {
   if (m.title === "Follow up in Months on Time") {
@@ -35,15 +36,15 @@ function metricSubtitle(m: SlaMetric): string {
   return "No qualifying deals in range";
 }
 
-type FirstCommFilter = "all" | "inBh" | "outBh";
+type BhCreationFilter = "all" | "inBh" | "outBh";
 
 export function SlaMetrics({ metrics }: SlaMetricsProps) {
   const [openTitle, setOpenTitle] = useState<string | null>(null);
-  const [firstCommFilter, setFirstCommFilter] = useState<FirstCommFilter>("all");
+  const [bhCreationFilter, setBhCreationFilter] = useState<BhCreationFilter>("all");
 
   const close = useCallback(() => {
     setOpenTitle(null);
-    setFirstCommFilter("all");
+    setBhCreationFilter("all");
   }, []);
 
   useEffect(() => {
@@ -67,14 +68,17 @@ export function SlaMetrics({ metrics }: SlaMetricsProps) {
   const openMetric = items?.find((x) => x.title === openTitle) ?? null;
   const rawRows = openMetric?.rows ?? [];
 
+  const showBhCreationFilter =
+    openMetric?.title === FIRST_COMM_TITLE || openMetric?.title === FOLLOW_UP_TITLE;
+
   const modalRows = useMemo(() => {
-    if (!openMetric || openMetric.title !== FIRST_COMM_TITLE) return rawRows;
+    if (!openMetric || !showBhCreationFilter) return rawRows;
     return rawRows.filter((r: SlaDealRow) => {
-      if (firstCommFilter === "all") return true;
-      if (firstCommFilter === "inBh") return r.createdInBusinessHours === true;
+      if (bhCreationFilter === "all") return true;
+      if (bhCreationFilter === "inBh") return r.createdInBusinessHours === true;
       return r.createdInBusinessHours === false;
     });
-  }, [openMetric, rawRows, firstCommFilter]);
+  }, [openMetric, rawRows, bhCreationFilter, showBhCreationFilter]);
 
   if (!metrics || !items) {
     return (
@@ -144,7 +148,7 @@ export function SlaMetrics({ metrics }: SlaMetricsProps) {
               </button>
             </div>
 
-            {openMetric.title === FIRST_COMM_TITLE && (
+            {showBhCreationFilter && (
               <div className="flex flex-wrap gap-2 border-b border-gray-100 px-4 py-2">
                 <span className="mr-2 self-center text-xs text-gray-500">Created:</span>
                 {(
@@ -157,9 +161,9 @@ export function SlaMetrics({ metrics }: SlaMetricsProps) {
                   <button
                     key={id}
                     type="button"
-                    onClick={() => setFirstCommFilter(id)}
+                    onClick={() => setBhCreationFilter(id)}
                     className={`rounded-full px-3 py-1 text-xs font-medium transition ${
-                      firstCommFilter === id
+                      bhCreationFilter === id
                         ? "bg-indigo-600 text-white"
                         : "bg-gray-100 text-gray-700 hover:bg-gray-200"
                     }`}
@@ -173,7 +177,7 @@ export function SlaMetrics({ metrics }: SlaMetricsProps) {
             <div className="max-h-[60vh] overflow-y-auto px-4 py-3">
               {modalRows.length === 0 ? (
                 <p className="text-sm text-gray-500">
-                  {openMetric.title === FIRST_COMM_TITLE && firstCommFilter !== "all"
+                  {showBhCreationFilter && bhCreationFilter !== "all"
                     ? "No deals match this filter."
                     : "No deals in this metric for the selected range."}
                 </p>

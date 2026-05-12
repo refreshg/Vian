@@ -438,14 +438,27 @@ export function computeSlaMetrics(
     if (!qualifies) continue;
     followPool += 1;
 
-    if (
-      !isInstantInBusinessHoursZoned(createMs, businessHours, SLA_TIME_ZONE)
-    )
-      continue;
+    const createdInBh = isInstantInBusinessHoursZoned(
+      createMs,
+      businessHours,
+      SLA_TIME_ZONE
+    );
+    const detailWithCreate = [
+      `Created: ${typeof dateCreate === "string" ? dateCreate : String(dateCreate ?? "")}`,
+      `Created in business hours: ${createdInBh ? "Yes" : "No"}`,
+      ...detailParts,
+    ].join(" · ");
+
+    followRows.push(
+      dealRow(deal, stageIdToName, detailWithCreate, {
+        createdInBusinessHours: createdInBh,
+      })
+    );
+
+    if (!createdInBh) continue;
 
     followBhTotal += 1;
     if (isOnTime) followBhOnTime += 1;
-    followRows.push(dealRow(deal, stageIdToName, detailParts.join(" · ")));
   }
 
   // —— B2. Follow-up in Months (Meeting / Action / User Action with DEADLINE; no override) ——
