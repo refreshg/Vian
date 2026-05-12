@@ -12,8 +12,8 @@ const FIRST_COMM_TITLE = "First Communication on Time";
 function metricSubtitle(m: SlaMetric): string {
   if (m.title === "Follow up in Months on Time") {
     return m.totalCount > 0
-      ? `${m.onTimeCount} on time (out of ${m.totalCount} with calendar meeting + deadline)`
-      : "No deals with a qualifying calendar meeting";
+      ? `${m.onTimeCount} on time (out of ${m.totalCount} with scheduled activity + deadline)`
+      : "No deals with a qualifying activity (Meeting / Action / User Action + deadline)";
   }
   if (m.title === "Price sharing to Patient on Time") {
     return m.totalCount > 0

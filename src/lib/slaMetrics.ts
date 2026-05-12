@@ -77,8 +77,12 @@ export function getBusinessHoursForCategory(
 /** Stage name phrases for multi-pipeline SLA (stage IDs differ per pipeline, e.g. C1:NEW vs C2:NEW). */
 const PHRASE_INITIAL = "Coordinator did not start";
 const PHRASE_CONTACT_SUCCESSFUL = "Contact was Successful";
-/** Bitrix CRM activity TYPE_ID: calendar meeting (scheduled in calendar). */
-const CRM_ACTIVITY_TYPE_MEETING = 1;
+/**
+ * Bitrix CRM activity TYPE_ID (crm.enum.activitytype — built-in types).
+ * We count types that typically have a scheduled moment + DEADLINE like meetings:
+ * 1 Meeting, 5 Action, 6 User Action ("Contact customer" is usually 5 or 6, not 1).
+ */
+const FOLLOW_MONTHS_ACTIVITY_TYPE_IDS = new Set([1, 5, 6]);
 
 /** Return stage IDs whose human-readable name contains the given phrase (case-insensitive). */
 function stageIdsMatchingName(
@@ -444,7 +448,7 @@ export function computeSlaMetrics(
     followRows.push(dealRow(deal, stageIdToName, detailParts.join(" · ")));
   }
 
-  // —— B2. Follow-up in Months (calendar meetings with DEADLINE only; no override) ——
+  // —— B2. Follow-up in Months (Meeting / Action / User Action with DEADLINE; no override) ——
   let followMonthsTotal = 0;
   let followMonthsOnTime = 0;
   const followMonthsRows: SlaDealRow[] = [];
@@ -455,7 +459,7 @@ export function computeSlaMetrics(
     const activities = activitiesByDeal[dealId] ?? [];
     const timed = activities.filter((a) => {
       const typeId = Number(a.TYPE_ID);
-      if (typeId !== CRM_ACTIVITY_TYPE_MEETING) return false;
+      if (!FOLLOW_MONTHS_ACTIVITY_TYPE_IDS.has(typeId)) return false;
       const dl = activityDeadlineMs(a);
       return Number.isFinite(dl);
     });
@@ -485,7 +489,7 @@ export function computeSlaMetrics(
           ? String(a.END_TIME ?? a.LAST_UPDATED ?? "").trim()
           : "";
       activityLines.push(
-        `Meeting ${a.ID} @ ${schedLabel || String(sched)} → ${
+        `Activity ${a.ID} (type ${a.TYPE_ID ?? "?"}) @ ${schedLabel || String(sched)} → ${
           completed
             ? `done ${endLabel || "?"}`
             : now > sched
