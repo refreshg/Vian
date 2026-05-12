@@ -51,15 +51,63 @@ function bhFilterLabelGeorgian(f: BhCreationFilter): string {
   }
 }
 
+function filterRowsByBhCreation(
+  rows: SlaDealRow[],
+  f: BhCreationFilter
+): SlaDealRow[] {
+  if (f === "all") return rows;
+  if (f === "inBh") return rows.filter((r) => r.createdInBusinessHours === true);
+  return rows.filter((r) => r.createdInBusinessHours === false);
+}
+
 export function SlaMetrics({ metrics }: SlaMetricsProps) {
   const [openTitle, setOpenTitle] = useState<string | null>(null);
   const [pendingBhFilter, setPendingBhFilter] = useState<BhCreationFilter>("all");
   const [appliedBhFilter, setAppliedBhFilter] = useState<BhCreationFilter>("all");
+  const [displayedRows, setDisplayedRows] = useState<SlaDealRow[]>([]);
+
+  const items = useMemo((): SlaMetric[] | null => {
+    if (!metrics) return null;
+    return [
+      metrics.firstCommunication,
+      metrics.followUp,
+      metrics.followUpMonths,
+      metrics.priceSharing,
+    ];
+  }, [metrics]);
+
+  const openMetric = useMemo(() => {
+    if (!openTitle || !items) return null;
+    return items.find((x) => x.title === openTitle) ?? null;
+  }, [items, openTitle]);
+
+  const showBhCreationFilter =
+    openMetric?.title === FIRST_COMM_TITLE || openMetric?.title === FOLLOW_UP_TITLE;
+
+  useEffect(() => {
+    if (!openTitle || !openMetric) {
+      setDisplayedRows([]);
+      return;
+    }
+    const rows = openMetric.rows ?? [];
+    if (showBhCreationFilter) {
+      setDisplayedRows(filterRowsByBhCreation(rows, appliedBhFilter));
+    } else {
+      setDisplayedRows(rows);
+    }
+  }, [openTitle, openMetric, appliedBhFilter, showBhCreationFilter]);
 
   const close = useCallback(() => {
     setOpenTitle(null);
     setPendingBhFilter("all");
     setAppliedBhFilter("all");
+    setDisplayedRows([]);
+  }, []);
+
+  const openMetricModal = useCallback((title: string) => {
+    setPendingBhFilter("all");
+    setAppliedBhFilter("all");
+    setOpenTitle(title);
   }, []);
 
   useEffect(() => {
@@ -70,37 +118,6 @@ export function SlaMetrics({ metrics }: SlaMetricsProps) {
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
   }, [openTitle, close]);
-
-  useEffect(() => {
-    if (openTitle === FIRST_COMM_TITLE || openTitle === FOLLOW_UP_TITLE) {
-      setPendingBhFilter("all");
-      setAppliedBhFilter("all");
-    }
-  }, [openTitle]);
-
-  const items: SlaMetric[] | null = metrics
-    ? [
-        metrics.firstCommunication,
-        metrics.followUp,
-        metrics.followUpMonths,
-        metrics.priceSharing,
-      ]
-    : null;
-
-  const openMetric = items?.find((x) => x.title === openTitle) ?? null;
-  const rawRows = openMetric?.rows ?? [];
-
-  const showBhCreationFilter =
-    openMetric?.title === FIRST_COMM_TITLE || openMetric?.title === FOLLOW_UP_TITLE;
-
-  const modalRows = useMemo(() => {
-    if (!openMetric || !showBhCreationFilter) return rawRows;
-    return rawRows.filter((r: SlaDealRow) => {
-      if (appliedBhFilter === "all") return true;
-      if (appliedBhFilter === "inBh") return r.createdInBusinessHours === true;
-      return r.createdInBusinessHours === false;
-    });
-  }, [openMetric, rawRows, appliedBhFilter, showBhCreationFilter]);
 
   if (!metrics || !items) {
     return (
@@ -120,7 +137,7 @@ export function SlaMetrics({ metrics }: SlaMetricsProps) {
             <button
               key={m.title}
               type="button"
-              onClick={() => setOpenTitle(m.title)}
+              onClick={() => openMetricModal(m.title)}
               className="flex flex-col rounded-lg border border-transparent text-left transition hover:border-indigo-200 hover:bg-indigo-50/40 focus-visible:outline focus-visible:ring-2 focus-visible:ring-indigo-500"
             >
               <span className="text-3xl font-bold text-gray-900">
@@ -203,7 +220,7 @@ export function SlaMetrics({ metrics }: SlaMetricsProps) {
                   </button>
                 </div>
                 <p className="text-sm text-gray-800">
-                  <span className="font-medium text-gray-900">ამჟამად ფილტრი: </span>
+                  <span className="font-medium text-gray-900">სიაში მოქმედებს: </span>
                   {bhFilterLabelGeorgian(appliedBhFilter)}
                 </p>
                 {pendingBhFilter !== appliedBhFilter && (
@@ -215,7 +232,7 @@ export function SlaMetrics({ metrics }: SlaMetricsProps) {
             )}
 
             <div className="max-h-[60vh] overflow-y-auto px-4 py-3">
-              {modalRows.length === 0 ? (
+              {displayedRows.length === 0 ? (
                 <p className="text-sm text-gray-500">
                   {showBhCreationFilter && appliedBhFilter !== "all"
                     ? "ამ ფილტრით დილი ვერ მოიძებნა."
@@ -223,7 +240,7 @@ export function SlaMetrics({ metrics }: SlaMetricsProps) {
                 </p>
               ) : (
                 <ul className="divide-y divide-gray-100">
-                  {modalRows.map((r: SlaDealRow) => (
+                  {displayedRows.map((r: SlaDealRow) => (
                     <li key={r.dealId} className="py-3 first:pt-0">
                       <div className="flex flex-wrap items-baseline gap-x-2 gap-y-1">
                         <span className="font-mono text-sm font-medium text-gray-900">{r.dealId}</span>

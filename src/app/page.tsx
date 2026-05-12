@@ -91,7 +91,17 @@ export default function DashboardPage() {
         endDate,
         category: selectedCategory,
       });
-      const res = await fetch(`/api/deals?${params}`);
+      const controller = new AbortController();
+      const timeoutMs = 120000;
+      const timeoutId = window.setTimeout(() => controller.abort(), timeoutMs);
+      let res: Response;
+      try {
+        res = await fetch(`/api/deals?${params}`, {
+          signal: controller.signal,
+        });
+      } finally {
+        window.clearTimeout(timeoutId);
+      }
       const data = await res.json();
       if (!res.ok) throw new Error(data.error || "Failed to fetch");
       setDeals(data.result ?? []);
@@ -117,7 +127,13 @@ export default function DashboardPage() {
         );
       }
     } catch (e) {
-      setError(e instanceof Error ? e.message : "Something went wrong");
+      const msg =
+        e instanceof Error
+          ? e.name === "AbortError"
+            ? "მოთხოვნა გაუქმდა დროის გამო — სცადეთ ხელახლა ან შეამცირეთ თარიღების დიაპაზონი."
+            : e.message
+          : "Something went wrong";
+      setError(msg);
       setDeals([]);
       setStageNameMap({});
       setAllStageIdsInOrder([]);

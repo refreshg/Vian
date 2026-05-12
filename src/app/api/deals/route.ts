@@ -14,6 +14,9 @@ import {
   type PriceSharingDebugRow,
 } from "@/lib/slaMetrics";
 
+/** Allow long Bitrix batches (deals + history + parallel activities). */
+export const maxDuration = 120;
+
 const DEPARTMENT_FIELD_ID = "UF_CRM_1758023694929";
 /** Rejection reasons field for Pipeline 1 (Caucasus Medical Centre) */
 const REJECTION_REASONS_FIELD_ID = "UF_CRM_1753862633986";

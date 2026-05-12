@@ -321,9 +321,105 @@ export async function fetchStageHistoryForDeals(
   return all;
 }
 
+function sleep(ms: number): Promise<void> {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+/** Parallel Bitrix calls; keep modest concurrency to reduce QUERY_LIMIT_EXCEEDED. */
+const ACTIVITY_FETCH_CONCURRENCY = 6;
+const ACTIVITY_FETCH_RETRIES = 2;
+
+async function fetchActivityPage(
+  endpoint: string,
+  body: Record<string, unknown>
+): Promise<{ result: BitrixActivityItem[]; next?: number }> {
+  let lastErr: unknown;
+  for (let attempt = 0; attempt <= ACTIVITY_FETCH_RETRIES; attempt++) {
+    try {
+      const response = await fetch(endpoint, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(body),
+      });
+      const data = await response.json();
+      if (!response.ok) {
+        throw new Error(
+          data.error_description || data.error || `HTTP ${response.status}`
+        );
+      }
+      if (data.error) {
+        throw new Error(data.error_description || data.error);
+      }
+      return {
+        result: (data.result ?? []) as BitrixActivityItem[],
+        next: typeof data.next === "number" ? data.next : undefined,
+      };
+    } catch (e) {
+      lastErr = e;
+      if (attempt < ACTIVITY_FETCH_RETRIES) {
+        await sleep(350 * (attempt + 1));
+      }
+    }
+  }
+  throw lastErr instanceof Error ? lastErr : new Error(String(lastErr));
+}
+
+/**
+ * All activities for one deal (paginated). Bitrix filter by OWNER_ID array is unreliable — per deal.
+ */
+async function fetchActivitiesForOneDeal(
+  dealId: string,
+  endpoint: string
+): Promise<BitrixActivityItem[]> {
+  const ownerId = Number(dealId);
+  const ownerIdFilter: string | number = Number.isFinite(ownerId) ? ownerId : dealId;
+  const all: BitrixActivityItem[] = [];
+  let start = 0;
+
+  // eslint-disable-next-line no-constant-condition
+  while (true) {
+    const body: Record<string, unknown> = {
+      filter: {
+        OWNER_TYPE_ID: 2,
+        OWNER_ID: ownerIdFilter,
+      },
+      order: { ID: "ASC" },
+      select: [
+        "ID",
+        "OWNER_ID",
+        "OWNER_TYPE_ID",
+        "TYPE_ID",
+        "CREATED",
+        "START_TIME",
+        "END_TIME",
+        "DEADLINE",
+        "LAST_UPDATED",
+        "COMPLETED",
+      ],
+      start,
+    };
+
+    const { result, next } = await fetchActivityPage(endpoint, body);
+    for (const activity of result) {
+      all.push(activity);
+    }
+
+    if (result.length < 50) break;
+    if (typeof next === "number") {
+      if (next === start) break;
+      start = next;
+    } else {
+      start += result.length;
+    }
+  }
+
+  return all;
+}
+
 /**
  * Fetches activities for deal IDs via crm.activity.list.
  * Returns a map keyed by OWNER_ID (deal ID string).
+ * Uses bounded parallelism (sequential per-deal was very slow for large dashboards).
  */
 export async function fetchActivitiesForDeals(
   dealIds: string[]
@@ -334,70 +430,20 @@ export async function fetchActivitiesForDeals(
   const baseUrl = getWebhookUrl();
   const endpoint = `${baseUrl}/crm.activity.list`;
   const byDeal: Record<string, BitrixActivityItem[]> = {};
-  // Bitrix crm.activity.list filtering by OWNER_ID array is unreliable on some portals.
-  // Fetch per-deal to ensure we don't miss activities (critical for Follow up in Months SLA).
-  for (const dealId of ids) {
-    const ownerId = Number(dealId);
-    const ownerIdFilter: string | number = Number.isFinite(ownerId) ? ownerId : dealId;
-    let start = 0;
 
-    // eslint-disable-next-line no-constant-condition
-    while (true) {
-      const body: Record<string, unknown> = {
-        filter: {
-          OWNER_TYPE_ID: 2,
-          OWNER_ID: ownerIdFilter,
-        },
-        order: { ID: "ASC" },
-        select: [
-          "ID",
-          "OWNER_ID",
-          "OWNER_TYPE_ID",
-          "TYPE_ID",
-          "CREATED",
-          "START_TIME",
-          "END_TIME",
-          "DEADLINE",
-          "LAST_UPDATED",
-          "COMPLETED",
-        ],
-        start,
-      };
-
-      const response = await fetch(endpoint, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(body),
-      });
-
-      const data = await response.json();
-
-      if (!response.ok) {
-        throw new Error(
-          data.error_description || data.error || `HTTP ${response.status}`
-        );
-      }
-
-      if (data.error) {
-        throw new Error(data.error_description || data.error);
-      }
-
-      const result = (data.result ?? []) as BitrixActivityItem[];
-      for (const activity of result) {
-        const key = String(activity?.OWNER_ID ?? dealId);
-        if (!key) continue;
-        if (!byDeal[key]) byDeal[key] = [];
-        byDeal[key].push(activity);
-      }
-
-      if (result.length < 50) break;
-      const nextVal = data.next;
-      if (typeof nextVal === "number") {
-        if (nextVal === start) break;
-        start = nextVal;
-      } else {
-        start += result.length;
-      }
+  for (let i = 0; i < ids.length; i += ACTIVITY_FETCH_CONCURRENCY) {
+    const batch = ids.slice(i, i + ACTIVITY_FETCH_CONCURRENCY);
+    const results = await Promise.all(
+      batch.map(async (dealId) => {
+        try {
+          return { dealId, rows: await fetchActivitiesForOneDeal(dealId, endpoint) };
+        } catch {
+          return { dealId, rows: [] as BitrixActivityItem[] };
+        }
+      })
+    );
+    for (const { dealId, rows } of results) {
+      byDeal[dealId] = rows;
     }
   }
 
