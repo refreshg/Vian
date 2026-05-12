@@ -421,7 +421,7 @@ export function computeSlaMetrics(
               isOnTime = false;
             }
           } else {
-            detailParts = ["No Contact was Successful after follow-up"];
+            detailParts = ["No follow up on time"];
             isOnTime = false;
           }
         } else {
