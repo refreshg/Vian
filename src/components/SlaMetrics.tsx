@@ -1,22 +1,24 @@
 "use client";
 
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 import type { SlaDealRow, SlaMetric, SlaSummary } from "@/lib/slaMetrics";
 
 interface SlaMetricsProps {
   metrics: SlaSummary | null;
 }
 
+const FIRST_COMM_TITLE = "First Communication on Time";
+
 function metricSubtitle(m: SlaMetric): string {
   if (m.title === "Follow up in Months on Time") {
     return m.totalCount > 0
-      ? `${m.onTimeCount} on time (out of ${m.totalCount} with scheduled activity)`
-      : "No deals with a timed activity in range";
+      ? `${m.onTimeCount} on time (out of ${m.totalCount} with calendar meeting + deadline)`
+      : "No deals with a qualifying calendar meeting";
   }
   if (m.title === "Price sharing to Patient on Time") {
     return m.totalCount > 0
-      ? `${m.onTimeCount} on time (out of ${m.totalCount})`
-      : "No deals on / having been on price-sharing stage";
+      ? `${m.onTimeCount} on time (out of ${m.totalCount} ever on Proforma — ≤24 calendar hours)`
+      : "No deals that reached Proforma";
   }
   const pool = m.poolCount ?? 0;
   const bh = m.totalCount;
@@ -33,10 +35,16 @@ function metricSubtitle(m: SlaMetric): string {
   return "No qualifying deals in range";
 }
 
+type FirstCommFilter = "all" | "inBh" | "outBh";
+
 export function SlaMetrics({ metrics }: SlaMetricsProps) {
   const [openTitle, setOpenTitle] = useState<string | null>(null);
+  const [firstCommFilter, setFirstCommFilter] = useState<FirstCommFilter>("all");
 
-  const close = useCallback(() => setOpenTitle(null), []);
+  const close = useCallback(() => {
+    setOpenTitle(null);
+    setFirstCommFilter("all");
+  }, []);
 
   useEffect(() => {
     if (!openTitle) return;
@@ -47,7 +55,28 @@ export function SlaMetrics({ metrics }: SlaMetricsProps) {
     return () => window.removeEventListener("keydown", onKey);
   }, [openTitle, close]);
 
-  if (!metrics) {
+  const items: SlaMetric[] | null = metrics
+    ? [
+        metrics.firstCommunication,
+        metrics.followUp,
+        metrics.followUpMonths,
+        metrics.priceSharing,
+      ]
+    : null;
+
+  const openMetric = items?.find((x) => x.title === openTitle) ?? null;
+  const rawRows = openMetric?.rows ?? [];
+
+  const modalRows = useMemo(() => {
+    if (!openMetric || openMetric.title !== FIRST_COMM_TITLE) return rawRows;
+    return rawRows.filter((r: SlaDealRow) => {
+      if (firstCommFilter === "all") return true;
+      if (firstCommFilter === "inBh") return r.createdInBusinessHours === true;
+      return r.createdInBusinessHours === false;
+    });
+  }, [openMetric, rawRows, firstCommFilter]);
+
+  if (!metrics || !items) {
     return (
       <div className="rounded-lg border border-gray-200 bg-white p-6">
         <p className="text-sm text-gray-500">
@@ -56,16 +85,6 @@ export function SlaMetrics({ metrics }: SlaMetricsProps) {
       </div>
     );
   }
-
-  const items: SlaMetric[] = [
-    metrics.firstCommunication,
-    metrics.followUp,
-    metrics.followUpMonths,
-    metrics.priceSharing,
-  ];
-
-  const openMetric = items.find((x) => x.title === openTitle) ?? null;
-  const rows = openMetric?.rows ?? [];
 
   return (
     <>
@@ -124,12 +143,43 @@ export function SlaMetrics({ metrics }: SlaMetricsProps) {
                 </svg>
               </button>
             </div>
+
+            {openMetric.title === FIRST_COMM_TITLE && (
+              <div className="flex flex-wrap gap-2 border-b border-gray-100 px-4 py-2">
+                <span className="mr-2 self-center text-xs text-gray-500">Created:</span>
+                {(
+                  [
+                    ["all", "All"],
+                    ["inBh", "In business hours"],
+                    ["outBh", "Outside business hours"],
+                  ] as const
+                ).map(([id, label]) => (
+                  <button
+                    key={id}
+                    type="button"
+                    onClick={() => setFirstCommFilter(id)}
+                    className={`rounded-full px-3 py-1 text-xs font-medium transition ${
+                      firstCommFilter === id
+                        ? "bg-indigo-600 text-white"
+                        : "bg-gray-100 text-gray-700 hover:bg-gray-200"
+                    }`}
+                  >
+                    {label}
+                  </button>
+                ))}
+              </div>
+            )}
+
             <div className="max-h-[60vh] overflow-y-auto px-4 py-3">
-              {rows.length === 0 ? (
-                <p className="text-sm text-gray-500">No deals in this metric for the selected range.</p>
+              {modalRows.length === 0 ? (
+                <p className="text-sm text-gray-500">
+                  {openMetric.title === FIRST_COMM_TITLE && firstCommFilter !== "all"
+                    ? "No deals match this filter."
+                    : "No deals in this metric for the selected range."}
+                </p>
               ) : (
                 <ul className="divide-y divide-gray-100">
-                  {rows.map((r: SlaDealRow) => (
+                  {modalRows.map((r: SlaDealRow) => (
                     <li key={r.dealId} className="py-3 first:pt-0">
                       <div className="flex flex-wrap items-baseline gap-x-2 gap-y-1">
                         <span className="font-mono text-sm font-medium text-gray-900">{r.dealId}</span>

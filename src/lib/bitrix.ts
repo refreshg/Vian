@@ -200,6 +200,8 @@ export interface BitrixActivityItem {
   ID: string;
   OWNER_ID?: string | number;
   OWNER_TYPE_ID?: string | number;
+  /** Bitrix activity type (1 = Meeting / calendar). */
+  TYPE_ID?: string | number;
   CREATED?: string;
   START_TIME?: string;
   END_TIME?: string;
@@ -351,6 +353,7 @@ export async function fetchActivitiesForDeals(
           "ID",
           "OWNER_ID",
           "OWNER_TYPE_ID",
+          "TYPE_ID",
           "CREATED",
           "START_TIME",
           "END_TIME",
