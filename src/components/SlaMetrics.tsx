@@ -38,19 +38,6 @@ function metricSubtitle(m: SlaMetric): string {
 
 type BhCreationFilter = "all" | "inBh" | "outBh";
 
-function bhFilterLabelGeorgian(f: BhCreationFilter): string {
-  switch (f) {
-    case "all":
-      return "ყველა დილი (შექმნის დროით ფილტრი არ მოქმედებს)";
-    case "inBh":
-      return "მხოლოდ სამუშაო საათებში შექმნილი დილები";
-    case "outBh":
-      return "მხოლოდ სამუშაო საათების გარეთ შექმნილი დილები";
-    default:
-      return "";
-  }
-}
-
 function filterRowsByBhCreation(
   rows: SlaDealRow[],
   f: BhCreationFilter
@@ -62,9 +49,7 @@ function filterRowsByBhCreation(
 
 export function SlaMetrics({ metrics }: SlaMetricsProps) {
   const [openTitle, setOpenTitle] = useState<string | null>(null);
-  const [pendingBhFilter, setPendingBhFilter] = useState<BhCreationFilter>("all");
-  const [appliedBhFilter, setAppliedBhFilter] = useState<BhCreationFilter>("all");
-  const [displayedRows, setDisplayedRows] = useState<SlaDealRow[]>([]);
+  const [bhCreationFilter, setBhCreationFilter] = useState<BhCreationFilter>("all");
 
   const items = useMemo((): SlaMetric[] | null => {
     if (!metrics) return null;
@@ -84,30 +69,15 @@ export function SlaMetrics({ metrics }: SlaMetricsProps) {
   const showBhCreationFilter =
     openMetric?.title === FIRST_COMM_TITLE || openMetric?.title === FOLLOW_UP_TITLE;
 
-  useEffect(() => {
-    if (!openTitle || !openMetric) {
-      setDisplayedRows([]);
-      return;
-    }
-    const rows = openMetric.rows ?? [];
-    if (showBhCreationFilter) {
-      setDisplayedRows(filterRowsByBhCreation(rows, appliedBhFilter));
-    } else {
-      setDisplayedRows(rows);
-    }
-  }, [openTitle, openMetric, appliedBhFilter, showBhCreationFilter]);
+  const modalRows = useMemo(() => {
+    const rows = openMetric?.rows ?? [];
+    if (!openMetric || !showBhCreationFilter) return rows;
+    return filterRowsByBhCreation(rows, bhCreationFilter);
+  }, [openMetric, showBhCreationFilter, bhCreationFilter]);
 
   const close = useCallback(() => {
     setOpenTitle(null);
-    setPendingBhFilter("all");
-    setAppliedBhFilter("all");
-    setDisplayedRows([]);
-  }, []);
-
-  const openMetricModal = useCallback((title: string) => {
-    setPendingBhFilter("all");
-    setAppliedBhFilter("all");
-    setOpenTitle(title);
+    setBhCreationFilter("all");
   }, []);
 
   useEffect(() => {
@@ -137,7 +107,10 @@ export function SlaMetrics({ metrics }: SlaMetricsProps) {
             <button
               key={m.title}
               type="button"
-              onClick={() => openMetricModal(m.title)}
+              onClick={() => {
+                setBhCreationFilter("all");
+                setOpenTitle(m.title);
+              }}
               className="flex flex-col rounded-lg border border-transparent text-left transition hover:border-indigo-200 hover:bg-indigo-50/40 focus-visible:outline focus-visible:ring-2 focus-visible:ring-indigo-500"
             >
               <span className="text-3xl font-bold text-gray-900">
@@ -188,59 +161,41 @@ export function SlaMetrics({ metrics }: SlaMetricsProps) {
             </div>
 
             {showBhCreationFilter && (
-              <div className="space-y-2 border-b border-gray-100 px-4 py-3">
-                <div className="flex flex-wrap items-center gap-2">
-                  <span className="text-xs text-gray-500">შექმნის დროით:</span>
-                  {(
-                    [
-                      ["all", "ყველა"],
-                      ["inBh", "სამუშაო საათებში"],
-                      ["outBh", "სამუშაოს გარეთ"],
-                    ] as const
-                  ).map(([id, label]) => (
-                    <button
-                      key={id}
-                      type="button"
-                      onClick={() => setPendingBhFilter(id)}
-                      className={`rounded-full px-3 py-1 text-xs font-medium transition ${
-                        pendingBhFilter === id
-                          ? "bg-indigo-100 text-indigo-900 ring-2 ring-indigo-500"
-                          : "bg-gray-100 text-gray-700 hover:bg-gray-200"
-                      }`}
-                    >
-                      {label}
-                    </button>
-                  ))}
+              <div className="flex flex-wrap items-center gap-2 border-b border-gray-100 px-4 py-2">
+                <span className="mr-2 text-xs text-gray-500">შექმნის დროით:</span>
+                {(
+                  [
+                    ["all", "ყველა"],
+                    ["inBh", "სამუშაო საათებში"],
+                    ["outBh", "სამუშაოს გარეთ"],
+                  ] as const
+                ).map(([id, label]) => (
                   <button
+                    key={id}
                     type="button"
-                    onClick={() => setAppliedBhFilter(pendingBhFilter)}
-                    className="ml-auto rounded-md bg-indigo-600 px-3 py-1.5 text-xs font-medium text-white shadow hover:bg-indigo-700"
+                    onClick={() => setBhCreationFilter(id)}
+                    className={`rounded-full px-3 py-1 text-xs font-medium transition ${
+                      bhCreationFilter === id
+                        ? "bg-indigo-600 text-white"
+                        : "bg-gray-100 text-gray-700 hover:bg-gray-200"
+                    }`}
                   >
-                    Apply
+                    {label}
                   </button>
-                </div>
-                <p className="text-sm text-gray-800">
-                  <span className="font-medium text-gray-900">სიაში მოქმედებს: </span>
-                  {bhFilterLabelGeorgian(appliedBhFilter)}
-                </p>
-                {pendingBhFilter !== appliedBhFilter && (
-                  <p className="text-xs text-amber-700">
-                    არჩეულია სხვა ვარიანტი — სიის განახლებისთვის დააჭირეთ Apply.
-                  </p>
-                )}
+                ))}
               </div>
             )}
 
             <div className="max-h-[60vh] overflow-y-auto px-4 py-3">
-              {displayedRows.length === 0 ? (
+              {modalRows.length === 0 ? (
                 <p className="text-sm text-gray-500">
-                  {showBhCreationFilter && appliedBhFilter !== "all"
+                  {showBhCreationFilter && bhCreationFilter !== "all"
                     ? "ამ ფილტრით დილი ვერ მოიძებნა."
                     : "ამ მეტრიკისთვის დილი არ არის არჩეულ დიაპაზონში."}
                 </p>
               ) : (
                 <ul className="divide-y divide-gray-100">
-                  {displayedRows.map((r: SlaDealRow) => (
+                  {modalRows.map((r: SlaDealRow) => (
                     <li key={r.dealId} className="py-3 first:pt-0">
                       <div className="flex flex-wrap items-baseline gap-x-2 gap-y-1">
                         <span className="font-mono text-sm font-medium text-gray-900">{r.dealId}</span>
