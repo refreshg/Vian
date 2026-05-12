@@ -38,13 +38,28 @@ function metricSubtitle(m: SlaMetric): string {
 
 type BhCreationFilter = "all" | "inBh" | "outBh";
 
+function bhFilterLabelGeorgian(f: BhCreationFilter): string {
+  switch (f) {
+    case "all":
+      return "ყველა დილი (შექმნის დროით ფილტრი არ მოქმედებს)";
+    case "inBh":
+      return "მხოლოდ სამუშაო საათებში შექმნილი დილები";
+    case "outBh":
+      return "მხოლოდ სამუშაო საათების გარეთ შექმნილი დილები";
+    default:
+      return "";
+  }
+}
+
 export function SlaMetrics({ metrics }: SlaMetricsProps) {
   const [openTitle, setOpenTitle] = useState<string | null>(null);
-  const [bhCreationFilter, setBhCreationFilter] = useState<BhCreationFilter>("all");
+  const [pendingBhFilter, setPendingBhFilter] = useState<BhCreationFilter>("all");
+  const [appliedBhFilter, setAppliedBhFilter] = useState<BhCreationFilter>("all");
 
   const close = useCallback(() => {
     setOpenTitle(null);
-    setBhCreationFilter("all");
+    setPendingBhFilter("all");
+    setAppliedBhFilter("all");
   }, []);
 
   useEffect(() => {
@@ -55,6 +70,13 @@ export function SlaMetrics({ metrics }: SlaMetricsProps) {
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
   }, [openTitle, close]);
+
+  useEffect(() => {
+    if (openTitle === FIRST_COMM_TITLE || openTitle === FOLLOW_UP_TITLE) {
+      setPendingBhFilter("all");
+      setAppliedBhFilter("all");
+    }
+  }, [openTitle]);
 
   const items: SlaMetric[] | null = metrics
     ? [
@@ -74,11 +96,11 @@ export function SlaMetrics({ metrics }: SlaMetricsProps) {
   const modalRows = useMemo(() => {
     if (!openMetric || !showBhCreationFilter) return rawRows;
     return rawRows.filter((r: SlaDealRow) => {
-      if (bhCreationFilter === "all") return true;
-      if (bhCreationFilter === "inBh") return r.createdInBusinessHours === true;
+      if (appliedBhFilter === "all") return true;
+      if (appliedBhFilter === "inBh") return r.createdInBusinessHours === true;
       return r.createdInBusinessHours === false;
     });
-  }, [openMetric, rawRows, bhCreationFilter, showBhCreationFilter]);
+  }, [openMetric, rawRows, appliedBhFilter, showBhCreationFilter]);
 
   if (!metrics || !items) {
     return (
@@ -149,37 +171,55 @@ export function SlaMetrics({ metrics }: SlaMetricsProps) {
             </div>
 
             {showBhCreationFilter && (
-              <div className="flex flex-wrap gap-2 border-b border-gray-100 px-4 py-2">
-                <span className="mr-2 self-center text-xs text-gray-500">Created:</span>
-                {(
-                  [
-                    ["all", "All"],
-                    ["inBh", "In business hours"],
-                    ["outBh", "Outside business hours"],
-                  ] as const
-                ).map(([id, label]) => (
+              <div className="space-y-2 border-b border-gray-100 px-4 py-3">
+                <div className="flex flex-wrap items-center gap-2">
+                  <span className="text-xs text-gray-500">შექმნის დროით:</span>
+                  {(
+                    [
+                      ["all", "ყველა"],
+                      ["inBh", "სამუშაო საათებში"],
+                      ["outBh", "სამუშაოს გარეთ"],
+                    ] as const
+                  ).map(([id, label]) => (
+                    <button
+                      key={id}
+                      type="button"
+                      onClick={() => setPendingBhFilter(id)}
+                      className={`rounded-full px-3 py-1 text-xs font-medium transition ${
+                        pendingBhFilter === id
+                          ? "bg-indigo-100 text-indigo-900 ring-2 ring-indigo-500"
+                          : "bg-gray-100 text-gray-700 hover:bg-gray-200"
+                      }`}
+                    >
+                      {label}
+                    </button>
+                  ))}
                   <button
-                    key={id}
                     type="button"
-                    onClick={() => setBhCreationFilter(id)}
-                    className={`rounded-full px-3 py-1 text-xs font-medium transition ${
-                      bhCreationFilter === id
-                        ? "bg-indigo-600 text-white"
-                        : "bg-gray-100 text-gray-700 hover:bg-gray-200"
-                    }`}
+                    onClick={() => setAppliedBhFilter(pendingBhFilter)}
+                    className="ml-auto rounded-md bg-indigo-600 px-3 py-1.5 text-xs font-medium text-white shadow hover:bg-indigo-700"
                   >
-                    {label}
+                    Apply
                   </button>
-                ))}
+                </div>
+                <p className="text-sm text-gray-800">
+                  <span className="font-medium text-gray-900">ამჟამად ფილტრი: </span>
+                  {bhFilterLabelGeorgian(appliedBhFilter)}
+                </p>
+                {pendingBhFilter !== appliedBhFilter && (
+                  <p className="text-xs text-amber-700">
+                    არჩეულია სხვა ვარიანტი — სიის განახლებისთვის დააჭირეთ Apply.
+                  </p>
+                )}
               </div>
             )}
 
             <div className="max-h-[60vh] overflow-y-auto px-4 py-3">
               {modalRows.length === 0 ? (
                 <p className="text-sm text-gray-500">
-                  {showBhCreationFilter && bhCreationFilter !== "all"
-                    ? "No deals match this filter."
-                    : "No deals in this metric for the selected range."}
+                  {showBhCreationFilter && appliedBhFilter !== "all"
+                    ? "ამ ფილტრით დილი ვერ მოიძებნა."
+                    : "ამ მეტრიკისთვის დილი არ არის არჩეულ დიაპაზონში."}
                 </p>
               ) : (
                 <ul className="divide-y divide-gray-100">

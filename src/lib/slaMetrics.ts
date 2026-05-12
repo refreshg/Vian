@@ -9,14 +9,26 @@ import {
 
 export type { BusinessHoursConfig };
 
-/** Price-sharing stage per pipeline (Bitrix STATUS_ID). */
+/** Proforma / price-sharing stage per pipeline (Bitrix STATUS_ID). */
 export const PRICE_SHARING_STAGE_ID_BY_CATEGORY: Record<string, string> = {
   "1": "C1:UC_W95SAM",
   "2": "C2:FINAL_INVOICE",
   "3": "C3:UC_QHKPK0",
-  "4": "C4:UC_GR8ROT",
+  "4": "C4:UC_COEU6V",
   "5": "C5:UC_0VR22O",
 };
+
+/** Active communication stage (start of interval when deal was never Qualified before Proforma). */
+export const ACTIVE_COMMUNICATION_STAGE_ID_BY_CATEGORY: Record<string, string> = {
+  "1": "C1:UC_AEL2CB",
+  "2": "C2:PREPAYMENT_INVOICE",
+  "3": "C3:UC_MAXQG9",
+  "4": "C4:UC_4TSJWJ",
+  "5": "C5:UC_TLYV0G",
+};
+
+/** Excluded from Price sharing SLA (e.g. mistaken Proforma move). */
+export const PRICE_SHARING_EXCLUDED_DEAL_IDS = new Set<string>(["6367"]);
 
 export interface SlaDealRow {
   dealId: string;
@@ -228,6 +240,8 @@ export function computeSlaMetrics(
     options?.priceSharingStageId ??
     PRICE_SHARING_STAGE_ID_BY_CATEGORY[categoryId] ??
     "";
+  const activeCommStageId =
+    ACTIVE_COMMUNICATION_STAGE_ID_BY_CATEGORY[categoryId] ?? "";
 
   const initialStageIds = buildInitialStageIds(stageIdToName);
   const followUpDayStageIds = stageIdsMatchingRegex(
@@ -249,6 +263,8 @@ export function computeSlaMetrics(
     contactSuccessfulStageIds.has(sid);
   const isProformaStage = (sid: string) =>
     Boolean(priceSharingStageId) && sid === priceSharingStageId;
+  const isActiveCommStageById = (sid: string) =>
+    Boolean(activeCommStageId) && sid === activeCommStageId;
   const isQualifiedStage = (sid: string) => qualifiedStageIds.has(sid);
 
   const normalizeYes = (value: unknown): boolean => {
@@ -553,6 +569,7 @@ export function computeSlaMetrics(
   for (const deal of safeDeals) {
     const dealId = deal?.ID != null ? String(deal.ID) : "";
     if (!dealId || !priceSharingStageId) continue;
+    if (PRICE_SHARING_EXCLUDED_DEAL_IDS.has(dealId)) continue;
     const events = historyMap[dealId] ?? [];
     if (!dealTouchesProforma(deal, events)) continue;
 
@@ -585,10 +602,19 @@ export function computeSlaMetrics(
       startMs = parseTimeMs(qualEvent.CREATED_TIME);
       startLabel = `Qualified at ${qualEvent.CREATED_TIME}`;
     } else {
-      startMs = Number.isFinite(createMs)
-        ? createMs
-        : parseTimeMs(String(deal.DATE_CREATE ?? ""));
-      startLabel = `Lead created ${deal.DATE_CREATE ?? ""} (never Qualified before Proforma)`;
+      let activeCommEvent: StageHistoryItem | undefined;
+      for (const e of sliceBeforeProforma) {
+        if (isActiveCommStageById(stageId(e.STAGE_ID))) activeCommEvent = e;
+      }
+      if (activeCommEvent) {
+        startMs = parseTimeMs(activeCommEvent.CREATED_TIME);
+        startLabel = `Active communication at ${activeCommEvent.CREATED_TIME}`;
+      } else {
+        startMs = Number.isFinite(createMs)
+          ? createMs
+          : parseTimeMs(String(deal.DATE_CREATE ?? ""));
+        startLabel = `Lead created ${deal.DATE_CREATE ?? ""} (no Qualified and no Active communication before Proforma)`;
+      }
     }
     if (!Number.isFinite(startMs)) continue;
 
