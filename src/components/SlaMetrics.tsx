@@ -119,7 +119,7 @@ export function SlaMetrics({ metrics }: SlaMetricsProps) {
                 </span>
                 {typeof m.offHoursRate === "number" && (
                   <span className="pb-1 text-xs text-gray-500">
-                    არასამუშაო: {m.offHoursRate.toFixed(1)}%
+                    Non-working hours: {m.offHoursRate.toFixed(1)}%
                   </span>
                 )}
               </span>
