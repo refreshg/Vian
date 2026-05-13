@@ -24,7 +24,7 @@ export function isExcludedHolidayInZone(ms: number, timeZone: string): boolean {
 }
 
 /** ISO weekday in zone: 1 = Monday … 7 = Sunday */
-function isoWeekdayInZone(ms: number, timeZone: string): number {
+export function isoWeekdayInZone(ms: number, timeZone: string): number {
   return Number(formatInTimeZone(new Date(ms), timeZone, "i"));
 }
 

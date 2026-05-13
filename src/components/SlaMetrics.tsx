@@ -113,8 +113,15 @@ export function SlaMetrics({ metrics }: SlaMetricsProps) {
               }}
               className="flex flex-col rounded-lg border border-transparent text-left transition hover:border-indigo-200 hover:bg-indigo-50/40 focus-visible:outline focus-visible:ring-2 focus-visible:ring-indigo-500"
             >
-              <span className="text-3xl font-bold text-gray-900">
-                {`${m.rate.toFixed(0)}%`}
+              <span className="flex items-end gap-2">
+                <span className="text-3xl font-bold text-gray-900">
+                  {`${m.rate.toFixed(0)}%`}
+                </span>
+                {typeof m.offHoursRate === "number" && (
+                  <span className="pb-1 text-xs text-gray-500">
+                    არასამუშაო: {m.offHoursRate.toFixed(1)}%
+                  </span>
+                )}
               </span>
               <span className="mt-1 text-sm text-gray-600">{metricSubtitle(m)}</span>
               <span className="mt-2 text-sm font-medium text-gray-900">{m.title}</span>

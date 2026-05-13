@@ -2,6 +2,7 @@ import type { BitrixDeal } from "@/types/bitrix";
 import type { BitrixActivityItem, StageHistoryItem } from "./bitrix";
 import {
   businessHoursBetweenZoned,
+  isoWeekdayInZone,
   isInstantInBusinessHoursZoned,
   SLA_TIME_ZONE,
   type BusinessHoursConfig,
@@ -45,6 +46,8 @@ export interface SlaMetric {
   onTimeCount: number;
   totalCount: number;
   rate: number; // percentage 0-100
+  /** On-time rate for deals created outside business hours (same qualifying logic). */
+  offHoursRate?: number;
   /** Broader pool for context (e.g. all in-range deals with valid create). */
   poolCount?: number;
   rows?: SlaDealRow[];
@@ -143,6 +146,17 @@ function activityDeadlineMs(activity: BitrixActivityItem): number {
   return parseTimeMs(String(activity.DEADLINE ?? "").trim());
 }
 
+/** Exclude chat-finish/system chat events from Follow up in Months SLA. */
+function isExcludedFollowMonthsActivity(activity: BitrixActivityItem): boolean {
+  const subject = String(activity.SUBJECT ?? "").toLowerCase();
+  const providerId = String(activity.PROVIDER_ID ?? "").toLowerCase();
+  const providerTypeId = String(activity.PROVIDER_TYPE_ID ?? "").toLowerCase();
+  if (subject.includes("customer chat finished")) return true;
+  if (providerId.includes("imopenlines") || providerId.includes("openline")) return true;
+  if (providerTypeId.includes("chat")) return true;
+  return false;
+}
+
 /** Normalize STAGE_ID for comparison (trim, no case change — Bitrix returns exact casing). */
 function stageId(value: StageHistoryItem["STAGE_ID"]): string {
   return value != null ? String(value).trim() : "";
@@ -179,7 +193,7 @@ function makeMetric(
   title: string,
   onTimeCount: number,
   totalCount: number,
-  extras?: Partial<Pick<SlaMetric, "poolCount" | "rows">>
+  extras?: Partial<Pick<SlaMetric, "poolCount" | "rows" | "offHoursRate">>
 ): SlaMetric {
   const rate =
     totalCount > 0
@@ -192,6 +206,12 @@ function makeMetric(
     rate,
     ...extras,
   };
+}
+
+function calcRate(onTimeCount: number, totalCount: number): number {
+  return totalCount > 0
+    ? Math.round(((onTimeCount / totalCount) * 100) * 10) / 10
+    : 0;
 }
 
 function dealRow(
@@ -291,12 +311,15 @@ export function computeSlaMetrics(
     return false;
   };
 
-  // —— A. First Communication (<= 1 business hour from DATE_CREATE to first move out of initial stage) ——
+  // —— A. First Communication (<= 1 business hour; Monday gets 2 hours) ——
   const FIRST_COMMUNICATION_LIMIT_HOURS = 1;
+  const FIRST_COMMUNICATION_LIMIT_HOURS_MONDAY = 2;
   const nowMs = Date.now();
   let firstPool = 0;
   let firstBhTotal = 0;
   let firstBhOnTime = 0;
+  let firstOffTotal = 0;
+  let firstOffOnTime = 0;
   const firstCommDebug: any[] = [];
   const firstRows: SlaDealRow[] = [];
 
@@ -340,7 +363,12 @@ export function computeSlaMetrics(
       businessHours,
       SLA_TIME_ZONE
     );
-    const isOnTime = diffBusinessHours <= FIRST_COMMUNICATION_LIMIT_HOURS;
+    const weekdayIso = isoWeekdayInZone(createMs, SLA_TIME_ZONE);
+    const limitHours =
+      weekdayIso === 1
+        ? FIRST_COMMUNICATION_LIMIT_HOURS_MONDAY
+        : FIRST_COMMUNICATION_LIMIT_HOURS;
+    const isOnTime = diffBusinessHours <= limitHours;
     const triggerStageLabel =
       triggerStageId != null
         ? (stageIdToName[triggerStageId] ?? triggerStageId)
@@ -370,6 +398,7 @@ export function computeSlaMetrics(
           `Created: ${typeof dateCreate === "string" ? dateCreate : String(dateCreate ?? "")}`,
           `Created in business hours: ${createdInBh ? "Yes" : "No"}`,
           `First move: ${firstCommEnteredAt ?? "PENDING"} → ${triggerStageLabel}`,
+          `SLA limit: ${limitHours}h`,
           `Business hours to first move: ${Math.round(diffBusinessHours * 100) / 100}h`,
           isOnTime ? "On time" : "Late",
         ].join(" · "),
@@ -377,10 +406,13 @@ export function computeSlaMetrics(
       )
     );
 
-    if (!createdInBh) continue;
-
-    firstBhTotal += 1;
-    if (isOnTime) firstBhOnTime += 1;
+    if (createdInBh) {
+      firstBhTotal += 1;
+      if (isOnTime) firstBhOnTime += 1;
+    } else {
+      firstOffTotal += 1;
+      if (isOnTime) firstOffOnTime += 1;
+    }
   }
 
   // —— B. Follow-up on Time ——
@@ -388,6 +420,8 @@ export function computeSlaMetrics(
   let followPool = 0;
   let followBhTotal = 0;
   let followBhOnTime = 0;
+  let followOffTotal = 0;
+  let followOffOnTime = 0;
   const followRows: SlaDealRow[] = [];
 
   for (const deal of safeDeals) {
@@ -471,15 +505,20 @@ export function computeSlaMetrics(
       })
     );
 
-    if (!createdInBh) continue;
-
-    followBhTotal += 1;
-    if (isOnTime) followBhOnTime += 1;
+    if (createdInBh) {
+      followBhTotal += 1;
+      if (isOnTime) followBhOnTime += 1;
+    } else {
+      followOffTotal += 1;
+      if (isOnTime) followOffOnTime += 1;
+    }
   }
 
   // —— B2. Follow-up in Months (Meeting / Action / User Action with DEADLINE; no override) ——
   let followMonthsTotal = 0;
   let followMonthsOnTime = 0;
+  let followMonthsOffTotal = 0;
+  let followMonthsOffOnTime = 0;
   const followMonthsRows: SlaDealRow[] = [];
 
   for (const deal of safeDeals) {
@@ -489,6 +528,7 @@ export function computeSlaMetrics(
     const timed = activities.filter((a) => {
       const typeId = Number(a.TYPE_ID);
       if (!FOLLOW_MONTHS_ACTIVITY_TYPE_IDS.has(typeId)) return false;
+      if (isExcludedFollowMonthsActivity(a)) return false;
       const dl = activityDeadlineMs(a);
       return Number.isFinite(dl);
     });
@@ -529,8 +569,22 @@ export function computeSlaMetrics(
     }
 
     if (dealOnTime) followMonthsOnTime += 1;
+    const createMs = parseTimeMs(String(deal.DATE_CREATE ?? ""));
+    const createdInBh = isInstantInBusinessHoursZoned(
+      createMs,
+      businessHours,
+      SLA_TIME_ZONE
+    );
+    if (createdInBh) {
+      // currently only off-hours rate requested as secondary indicator
+    } else {
+      followMonthsOffTotal += 1;
+      if (dealOnTime) followMonthsOffOnTime += 1;
+    }
     followMonthsRows.push(
-      dealRow(deal, stageIdToName, activityLines.join(" | "))
+      dealRow(deal, stageIdToName, activityLines.join(" | "), {
+        createdInBusinessHours: createdInBh,
+      })
     );
 
     if (options?.followUpMonthsDebugOut) {
@@ -545,6 +599,8 @@ export function computeSlaMetrics(
   // —— C. Proforma / Price sharing (ever on Proforma stage; 24 calendar hours) ——
   let priceOnTime = 0;
   let priceTotal = 0;
+  let priceOffTotal = 0;
+  let priceOffOnTime = 0;
   const priceSharingDebug: Array<{
     Deal_ID: string;
     Start_Reference: string;
@@ -641,6 +697,16 @@ export function computeSlaMetrics(
       });
     }
     if (isOnTime) priceOnTime += 1;
+    const createMsForPrice = parseTimeMs(String(deal.DATE_CREATE ?? ""));
+    const createdInBhForPrice = isInstantInBusinessHoursZoned(
+      createMsForPrice,
+      businessHours,
+      SLA_TIME_ZONE
+    );
+    if (!createdInBhForPrice) {
+      priceOffTotal += 1;
+      if (isOnTime) priceOffOnTime += 1;
+    }
 
     priceRows.push(
       dealRow(
@@ -651,7 +717,8 @@ export function computeSlaMetrics(
           `Proforma: ${proformaLabel}`,
           `Elapsed (calendar h): ${Math.round(calendarHours * 100) / 100}h (on time if ≤ 24h)`,
           isOnTime ? "On time" : "Late",
-        ].join(" · ")
+        ].join(" · "),
+        { createdInBusinessHours: createdInBhForPrice }
       )
     );
   }
@@ -666,11 +733,13 @@ export function computeSlaMetrics(
       firstBhOnTime,
       firstBhTotal,
       {
+        offHoursRate: calcRate(firstOffOnTime, firstOffTotal),
         poolCount: firstPool,
         rows: firstRows,
       }
     ),
     followUp: makeMetric("Follow-up on Time", followBhOnTime, followBhTotal, {
+      offHoursRate: calcRate(followOffOnTime, followOffTotal),
       poolCount: followPool,
       rows: followRows,
     }),
@@ -678,13 +747,19 @@ export function computeSlaMetrics(
       "Follow up in Months on Time",
       followMonthsOnTime,
       followMonthsTotal,
-      { rows: followMonthsRows }
+      {
+        offHoursRate: calcRate(followMonthsOffOnTime, followMonthsOffTotal),
+        rows: followMonthsRows,
+      }
     ),
     priceSharing: makeMetric(
       "Price sharing to Patient on Time",
       priceOnTime,
       priceTotal,
-      { rows: priceRows }
+      {
+        offHoursRate: calcRate(priceOffOnTime, priceOffTotal),
+        rows: priceRows,
+      }
     ),
   };
 }

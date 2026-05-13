@@ -202,6 +202,9 @@ export interface BitrixActivityItem {
   OWNER_TYPE_ID?: string | number;
   /** Bitrix activity type (1 = Meeting / calendar). */
   TYPE_ID?: string | number;
+  SUBJECT?: string;
+  PROVIDER_ID?: string;
+  PROVIDER_TYPE_ID?: string;
   CREATED?: string;
   START_TIME?: string;
   END_TIME?: string;
@@ -389,6 +392,9 @@ async function fetchActivitiesForOneDeal(
         "OWNER_ID",
         "OWNER_TYPE_ID",
         "TYPE_ID",
+        "SUBJECT",
+        "PROVIDER_ID",
+        "PROVIDER_TYPE_ID",
         "CREATED",
         "START_TIME",
         "END_TIME",
