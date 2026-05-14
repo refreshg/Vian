@@ -96,3 +96,38 @@ export function businessHoursBetweenZoned(
 
   return totalMs / ONE_HOUR_MS;
 }
+
+/**
+ * If lead was created on Saturday/Sunday (Tbilisi), first communication is on-time when
+ * the first move out of initial happens during the first 2 work hours of the next working Monday.
+ * Returns null if creation was not on a weekend (use standard SLA instead).
+ */
+export function getWeekendLeadMondayTwoHourOnTimeWindow(
+  createMs: number,
+  bh: BusinessHoursConfig,
+  timeZone: string
+): { startMs: number; endMs: number; label: string } | null {
+  if (!Number.isFinite(createMs)) return null;
+  const wd = isoWeekdayInZone(createMs, timeZone);
+  if (wd !== 6 && wd !== 7) return null;
+
+  const createYmd = formatInTimeZone(new Date(createMs), timeZone, "yyyy-MM-dd");
+  const baseNoon = toDate(`${createYmd}T12:00:00`, { timeZone });
+
+  for (let add = 0; add < 21; add++) {
+    const day = addDays(baseNoon, add);
+    const t = day.getTime();
+    if (isoWeekdayInZone(t, timeZone) !== 1) continue;
+    if (!isWorkingDayInZone(t, timeZone)) continue;
+
+    const monYmd = formatInTimeZone(day, timeZone, "yyyy-MM-dd");
+    const startMs = toDate(
+      `${monYmd}T${String(bh.workdayStartHour).padStart(2, "0")}:00:00`,
+      { timeZone }
+    ).getTime();
+    const endMs = startMs + 2 * ONE_HOUR_MS;
+    const label = `${formatInTimeZone(new Date(startMs), timeZone, "yyyy-MM-dd HH:mm")}–${formatInTimeZone(new Date(endMs), timeZone, "HH:mm")}`;
+    return { startMs, endMs, label };
+  }
+  return null;
+}

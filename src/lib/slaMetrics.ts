@@ -2,7 +2,7 @@ import type { BitrixDeal } from "@/types/bitrix";
 import type { BitrixActivityItem, StageHistoryItem } from "./bitrix";
 import {
   businessHoursBetweenZoned,
-  isoWeekdayInZone,
+  getWeekendLeadMondayTwoHourOnTimeWindow,
   isInstantInBusinessHoursZoned,
   SLA_TIME_ZONE,
   type BusinessHoursConfig,
@@ -311,9 +311,8 @@ export function computeSlaMetrics(
     return false;
   };
 
-  // —— A. First Communication (<= 1 business hour; Monday gets 2 hours) ——
+  // —— A. First Communication (<= 1 business hour; Sat/Sun create → next working Mon first 2h on-time) ——
   const FIRST_COMMUNICATION_LIMIT_HOURS = 1;
-  const FIRST_COMMUNICATION_LIMIT_HOURS_MONDAY = 2;
   const nowMs = Date.now();
   let firstPool = 0;
   let firstBhTotal = 0;
@@ -363,12 +362,26 @@ export function computeSlaMetrics(
       businessHours,
       SLA_TIME_ZONE
     );
-    const weekdayIso = isoWeekdayInZone(createMs, SLA_TIME_ZONE);
-    const limitHours =
-      weekdayIso === 1
-        ? FIRST_COMMUNICATION_LIMIT_HOURS_MONDAY
-        : FIRST_COMMUNICATION_LIMIT_HOURS;
-    const isOnTime = diffBusinessHours <= limitHours;
+    const weekendMonWindow = getWeekendLeadMondayTwoHourOnTimeWindow(
+      createMs,
+      businessHours,
+      SLA_TIME_ZONE
+    );
+    let isOnTime: boolean;
+    let limitLabel: string;
+    if (weekendMonWindow) {
+      limitLabel = `weekend → Mon 2h (${weekendMonWindow.label})`;
+      const moveMs = firstCommEnteredAt ? parseTimeMs(firstCommEnteredAt) : NaN;
+      if (firstCommEnteredAt && Number.isFinite(moveMs)) {
+        isOnTime =
+          moveMs >= weekendMonWindow.startMs && moveMs < weekendMonWindow.endMs;
+      } else {
+        isOnTime = nowMs < weekendMonWindow.endMs;
+      }
+    } else {
+      limitLabel = `${FIRST_COMMUNICATION_LIMIT_HOURS}h business`;
+      isOnTime = diffBusinessHours <= FIRST_COMMUNICATION_LIMIT_HOURS;
+    }
     const triggerStageLabel =
       triggerStageId != null
         ? (stageIdToName[triggerStageId] ?? triggerStageId)
@@ -381,6 +394,8 @@ export function computeSlaMetrics(
       First_Comm_At: firstCommEnteredAt ?? "PENDING",
       Calculated_Hours: Math.round(diffHours * 100) / 100,
       Calculated_Business_Hours: Math.round(diffBusinessHours * 100) / 100,
+      SLA_Rule: weekendMonWindow ? "weekend_monday_2h" : "business_1h",
+      Weekend_Monday_Window: weekendMonWindow?.label ?? null,
       Is_On_Time: isOnTime,
     });
 
@@ -398,7 +413,7 @@ export function computeSlaMetrics(
           `Created: ${typeof dateCreate === "string" ? dateCreate : String(dateCreate ?? "")}`,
           `Created in business hours: ${createdInBh ? "Yes" : "No"}`,
           `First move: ${firstCommEnteredAt ?? "PENDING"} → ${triggerStageLabel}`,
-          `SLA limit: ${limitHours}h`,
+          `SLA limit: ${limitLabel}`,
           `Business hours to first move: ${Math.round(diffBusinessHours * 100) / 100}h`,
           isOnTime ? "On time" : "Late",
         ].join(" · "),
